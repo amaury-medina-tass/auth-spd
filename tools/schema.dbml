@@ -1,88 +1,136 @@
+// ===============================
+// ACTIONS
+// Acciones posibles sobre un módulo
+// Ej: READ, CREATE, UPDATE, DELETE
+// ===============================
 Table actions {
-  id uuid [pk, default: `uuid_generate_v4()`]
-  name varchar(50) [unique, not null]
-  description text
-  created_at timestamp [default: `now()`, not null]
-  updated_at timestamp [default: `now()`, not null]
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador único de la acción"]
+  name varchar(50) [unique, not null, note: "Nombre de la acción. Ej: READ, CREATE, UPDATE, DELETE"]
+  description text [note: "Descripción funcional de la acción"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación del registro"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de última actualización"]
 }
 
+// ===============================
+// MODULES
+// Módulos funcionales del sistema
+// Ej: MASTERS, DAGRD, FINANCIERO
+// ===============================
 Table modules {
-  id uuid [pk, default: `uuid_generate_v4()`]
-  name varchar(200) [unique, not null]
-  description text
-  path varchar(200) [unique, not null]
-  created_at timestamp [default: `now()`, not null]
-  updated_at timestamp [default: `now()`, not null]
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador único del módulo"]
+  name varchar(200) [unique, not null, note: "Nombre del módulo. Ej: Masters, DAGRD"]
+  description text [note: "Descripción funcional del módulo"]
+  path varchar(200) [unique, not null, note: "Ruta base en frontend/backend. Ej: /masters, /dagrd"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
+// ===============================
+// OUTBOX_MESSAGES
+// Implementación del patrón Outbox
+// Para publicar eventos de forma segura
+// ===============================
 Table outbox_messages {
-  id uuid [pk, default: `uuid_generate_v4()`]
-  name varchar(200) [not null]
-  payload jsonb [not null]
-  occurred_at timestamp [default: `now()`, not null]
-  processed_at timestamp
-  attempts int [default: 0, not null]
-  last_error text
-  created_at timestamp [default: `now()`, not null]
-  updated_at timestamp [default: `now()`, not null]
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del mensaje"]
+  name varchar(200) [not null, note: "Nombre del evento. Ej: USER_CREATED, ROLE_UPDATED"]
+  payload jsonb [not null, note: "Contenido del evento en formato JSON"]
+  occurred_at timestamp [default: `now()`, not null, note: "Momento en que ocurrió el evento"]
+  processed_at timestamp [note: "Momento en que el evento fue procesado"]
+  attempts int [default: 0, not null, note: "Número de intentos de procesamiento"]
+  last_error text [note: "Último error ocurrido al procesar el evento"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación del registro"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
+// ===============================
+// PERMISSIONS
+// Permisos atómicos (módulo + acción)
+// Ej: MASTERS + READ
+// ===============================
 Table permissions {
-  id uuid [pk, default: `uuid_generate_v4()`]
-  module_id uuid [not null]
-  action_id uuid [not null]
-  created_at timestamp [default: `now()`, not null]
-  updated_at timestamp [default: `now()`, not null]
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador único del permiso"]
+  module_id uuid [not null, note: "Referencia al módulo. Ej: MASTERS"]
+  action_id uuid [not null, note: "Referencia a la acción. Ej: READ"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 
   indexes {
-    (module_id, action_id) [unique]
+    (module_id, action_id) [unique, note: "Un permiso por combinación módulo + acción"]
   }
 }
 
+// ===============================
+// REFRESH_TOKENS
+// Tokens de refresco (rotables y revocables)
+// ===============================
 Table refresh_tokens {
-  id uuid [pk, default: `uuid_generate_v4()`]
-  user_id uuid [not null]
-  token_hash text [not null]
-  revoked boolean [default: false, not null]
-  expires_at timestamp [not null]
-  created_at timestamp [default: `now()`, not null]
-  updated_at timestamp [default: `now()`, not null]
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del refresh token"]
+  user_id uuid [not null, note: "Usuario propietario del token"]
+  token_hash text [not null, note: "Hash del refresh token (nunca se guarda en texto plano)"]
+  revoked boolean [default: false, not null, note: "Indica si el token fue revocado"]
+  expires_at timestamp [not null, note: "Fecha de expiración del refresh token"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
+// ===============================
+// ROLE_PERMISSIONS
+// Relación Rol ↔ Permiso
+// Define qué puede hacer cada rol
+// ===============================
 Table role_permissions {
-  role_id uuid [pk]
-  permission_id uuid [pk]
-  allowed boolean [default: true, not null]
-  created_at timestamp [default: `now()`, not null]
-  updated_at timestamp [default: `now()`, not null]
+  role_id uuid [pk, note: "Rol asignado"]
+  permission_id uuid [pk, note: "Permiso asignado"]
+  allowed boolean [default: true, not null, note: "Indica si el permiso está habilitado"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
+// ===============================
+// ROLES
+// Roles del sistema
+// Ej: ADMIN, ANALISTA, USUARIO
+// ===============================
 Table roles {
-  id uuid [pk, default: `uuid_generate_v4()`]
-  name varchar(200) [unique, not null]
-  description text
-  is_active boolean [default: true, not null]
-  is_default boolean [default: false, not null]
-  created_at timestamp [default: `now()`, not null]
-  updated_at timestamp [default: `now()`, not null]
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del rol"]
+  name varchar(200) [unique, not null, note: "Nombre del rol. Ej: ADMIN, SPD_USER"]
+  description text [note: "Descripción del rol y su propósito"]
+  is_active boolean [default: true, not null, note: "Indica si el rol está activo"]
+  is_default boolean [default: false, not null, note: "Indica si es el rol por defecto"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
+// ===============================
+// USER_ROLES
+// Relación Usuario ↔ Rol
+// ===============================
 Table user_roles {
-  user_id uuid [pk]
-  role_id uuid [pk]
-  created_at timestamp [default: `now()`, not null]
-  updated_at timestamp [default: `now()`, not null]
+  user_id uuid [pk, note: "Usuario al que se asigna el rol"]
+  role_id uuid [pk, note: "Rol asignado al usuario"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de asignación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
+// ===============================
+// USERS
+// Usuarios del sistema
+// ===============================
 Table users {
-  id uuid [pk, default: `uuid_generate_v4()`]
-  email varchar(255) [unique, not null]
-  password_hash text [not null]
-  is_active boolean [default: true, not null]
-  created_at timestamp [default: `now()`, not null]
-  updated_at timestamp [default: `now()`, not null]
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del usuario"]
+  email varchar(255) [unique, not null, note: "Correo electrónico. Ej: usuario@dominio.com"]
+  document_number varchar(50) [not null, note: "Número de documento del usuario"]
+  first_name varchar(100) [not null, note: "Primer nombre"]
+  last_name varchar(100) [not null, note: "Apellido"]
+  password_hash text [not null, note: "Hash de la contraseña"]
+  is_active boolean [default: true, not null, note: "Estado del usuario"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
+// ===============================
+// RELACIONES
+// ===============================
 Ref: permissions.module_id > modules.id [delete: cascade]
 Ref: permissions.action_id > actions.id [delete: cascade]
 Ref: refresh_tokens.user_id > users.id [delete: cascade]

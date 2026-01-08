@@ -11,7 +11,7 @@ export class RolesService {
     @InjectRepository(Role) private roles: Repository<Role>,
     @InjectRepository(RolePermission) private rolePerms: Repository<RolePermission>,
     private outbox: OutboxService
-  ) {}
+  ) { }
 
   list() {
     return this.roles.find();
@@ -28,7 +28,8 @@ export class RolesService {
 
   async setRolePermissions(
     roleId: string,
-    permissionIdsAllowed: Array<{ permissionId: string; allowed: boolean }>
+    permissionIdsAllowed: Array<{ permissionId: string; allowed: boolean }>,
+    requestId: string
   ) {
     const role = await this.roles.findOne({ where: { id: roleId } });
     if (!role) throw new NotFoundException("Role not found");
@@ -45,7 +46,7 @@ export class RolesService {
       );
     }
 
-    await this.outbox.enqueue("Auth.RolePermissionsChanged", { roleId });
+    await this.outbox.enqueue("Auth.RolePermissionsChanged", { roleId }, requestId);
     return { ok: true };
   }
 }

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { JwtService } from "@nestjs/jwt";
-import { Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
 import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "crypto";
 
@@ -9,9 +9,29 @@ import { User } from "@common/entities/user.entity";
 import { Role } from "@common/entities/role.entity";
 import { UserRole } from "@common/entities/user-role.entity";
 import { RefreshToken } from "@common/entities/refresh-token.entity";
+import { ActionEntity } from "@common/entities/action.entity";
+import { ModuleEntity } from "@common/entities/module.entity";
 import { hashPassword, verifyPassword } from "@common/security/password";
 import { hashToken, verifyToken } from "@common/security/token-hash";
 import { OutboxService } from "../outbox/outbox.service";
+
+// Tipos para el payload de permisos en el JWT
+type ActionPermissions = { [actionName: string]: boolean };
+interface ModulePermissions {
+  name: string;
+  actions: ActionPermissions;
+}
+type PermissionsPayload = { [modulePath: string]: ModulePermissions };
+
+interface UserPermissionRow {
+  module_path: string;
+  module_name: string;
+  action_name: string;
+}
+
+interface UserRoleRow {
+  role_name: string;
+}
 
 @Injectable()
 export class AuthService {
@@ -20,10 +40,11 @@ export class AuthService {
     @InjectRepository(RefreshToken) private refreshTokens: Repository<RefreshToken>,
     @InjectRepository(Role) private roles: Repository<Role>,
     @InjectRepository(UserRole) private userRoles: Repository<UserRole>,
+    private dataSource: DataSource,
     private jwt: JwtService,
     private cfg: ConfigService,
     private outbox: OutboxService
-  ) {}
+  ) { }
 
   private accessPrivateKey() {
     return this.cfg.get<string>("jwt.accessPrivateKey");
@@ -45,10 +66,90 @@ export class AuthService {
     return this.cfg.get<string>("jwt.refreshExpiresIn") ?? "30d";
   }
 
+  /**
+   * Obtiene los roles activos asignados al usuario.
+   */
+  private async getUserRoles(userId: string): Promise<string[]> {
+    const userRolesData = await this.userRoles.find({
+      where: { user_id: userId, role: { is_active: true } },
+      relations: ['role'],
+    });
+    return userRolesData.map((ur) => ur.role.name);
+  }
+
+  /**
+   * Obtiene todos los permisos del usuario agrupados por path del módulo.
+   * Cada módulo contiene nombre y un objeto con las acciones disponibles como booleanos.
+   * Las acciones que el usuario no tiene asignadas se marcan como false.
+   */
+  private async getUserPermissions(userId: string): Promise<PermissionsPayload> {
+    // Obtener todas las acciones disponibles
+    const allActions = await this.dataSource
+      .getRepository(ActionEntity)
+      .find({ select: ["name"] });
+    const actionNames = allActions.map((a) => a.name);
+
+    // Obtener todos los módulos con nombre y path
+    const allModules = await this.dataSource
+      .getRepository(ModuleEntity)
+      .find({ select: ["name", "path"] });
+
+    // Obtener permisos del usuario
+    const userPermissions = await this.dataSource.query<UserPermissionRow[]>(
+      `
+      SELECT
+        m.path AS module_path,
+        m.name AS module_name,
+        a.name AS action_name
+      FROM users u
+      JOIN user_roles ur ON ur.user_id = u.id
+      JOIN roles r ON r.id = ur.role_id AND r.is_active = TRUE
+      JOIN role_permissions rp ON rp.role_id = r.id AND rp.allowed = TRUE
+      JOIN permissions p ON p.id = rp.permission_id
+      JOIN modules m ON m.id = p.module_id
+      JOIN actions a ON a.id = p.action_id
+      WHERE u.id = $1 AND u.is_active = TRUE
+      `,
+      [userId]
+    );
+
+    // Crear set de permisos para búsqueda rápida
+    const permissionSet = new Set(
+      userPermissions.map((p) => `${p.module_path}:${p.action_name}`)
+    );
+
+    // Construir payload con todos los módulos y acciones
+    const permissions: PermissionsPayload = {};
+    for (const mod of allModules) {
+      const actions: ActionPermissions = {};
+      for (const action of actionNames) {
+        actions[action] = permissionSet.has(`${mod.path}:${action}`);
+      }
+      permissions[mod.path] = {
+        name: mod.name,
+        actions
+      };
+    }
+
+    return permissions;
+  }
+
   private async signAccessToken(user: User) {
-    // JwtModule ya trae RS256 + privateKey, pero lo dejamos explícito por claridad
+    const [permissions, roles] = await Promise.all([
+      this.getUserPermissions(user.id),
+      this.getUserRoles(user.id)
+    ]);
+
+    const fullName = `${user.first_name} ${user.last_name}`.trim();
+
     return this.jwt.signAsync(
-      { sub: user.id, email: user.email },
+      {
+        sub: user.id,
+        email: user.email,
+        name: fullName,
+        roles,
+        permissions
+      },
       { algorithm: "RS256", privateKey: this.accessPrivateKey(), expiresIn: this.accessExpiresIn() as any }
     );
   }
