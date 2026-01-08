@@ -1,0 +1,92 @@
+Table actions {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  name varchar(50) [unique, not null]
+  description text
+  created_at timestamp [default: `now()`, not null]
+  updated_at timestamp [default: `now()`, not null]
+}
+
+Table modules {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  name varchar(200) [unique, not null]
+  description text
+  path varchar(200) [unique, not null]
+  created_at timestamp [default: `now()`, not null]
+  updated_at timestamp [default: `now()`, not null]
+}
+
+Table outbox_messages {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  name varchar(200) [not null]
+  payload jsonb [not null]
+  occurred_at timestamp [default: `now()`, not null]
+  processed_at timestamp
+  attempts int [default: 0, not null]
+  last_error text
+  created_at timestamp [default: `now()`, not null]
+  updated_at timestamp [default: `now()`, not null]
+}
+
+Table permissions {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  module_id uuid [not null]
+  action_id uuid [not null]
+  created_at timestamp [default: `now()`, not null]
+  updated_at timestamp [default: `now()`, not null]
+
+  indexes {
+    (module_id, action_id) [unique]
+  }
+}
+
+Table refresh_tokens {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null]
+  token_hash text [not null]
+  revoked boolean [default: false, not null]
+  expires_at timestamp [not null]
+  created_at timestamp [default: `now()`, not null]
+  updated_at timestamp [default: `now()`, not null]
+}
+
+Table role_permissions {
+  role_id uuid [pk]
+  permission_id uuid [pk]
+  allowed boolean [default: true, not null]
+  created_at timestamp [default: `now()`, not null]
+  updated_at timestamp [default: `now()`, not null]
+}
+
+Table roles {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  name varchar(200) [unique, not null]
+  description text
+  is_active boolean [default: true, not null]
+  is_default boolean [default: false, not null]
+  created_at timestamp [default: `now()`, not null]
+  updated_at timestamp [default: `now()`, not null]
+}
+
+Table user_roles {
+  user_id uuid [pk]
+  role_id uuid [pk]
+  created_at timestamp [default: `now()`, not null]
+  updated_at timestamp [default: `now()`, not null]
+}
+
+Table users {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  email varchar(255) [unique, not null]
+  password_hash text [not null]
+  is_active boolean [default: true, not null]
+  created_at timestamp [default: `now()`, not null]
+  updated_at timestamp [default: `now()`, not null]
+}
+
+Ref: permissions.module_id > modules.id [delete: cascade]
+Ref: permissions.action_id > actions.id [delete: cascade]
+Ref: refresh_tokens.user_id > users.id [delete: cascade]
+Ref: role_permissions.role_id > roles.id [delete: cascade]
+Ref: role_permissions.permission_id > permissions.id [delete: cascade]
+Ref: user_roles.user_id > users.id [delete: cascade]
+Ref: user_roles.role_id > roles.id [delete: cascade]
