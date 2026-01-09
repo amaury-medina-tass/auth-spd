@@ -26,6 +26,12 @@ export class User {
   @Column({ type: "boolean", default: true })
   is_active!: boolean;
 
+  @Column({ type: "boolean", default: false })
+  email_verified!: boolean;
+
+  @Column({ type: "varchar", length: 6, nullable: true })
+  verification_code!: string | null;
+
   @Column({ type: "timestamp", default: () => "now()" })
   created_at!: Date;
 

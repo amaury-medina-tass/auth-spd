@@ -18,11 +18,13 @@ import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { PermissionsResolverService } from "./permissions-resolver.service";
 import { OutboxModule } from "../outbox/outbox.module";
+import { EmailModule } from "@common/email/email.module";
 
 @Module({
   imports: [
     PassportModule,
     OutboxModule,
+    EmailModule,
     TypeOrmModule.forFeature([
       User,
       RefreshToken,
@@ -50,4 +52,4 @@ import { OutboxModule } from "../outbox/outbox.module";
   providers: [AuthService, JwtStrategy, PermissionsResolverService],
   exports: [AuthService, PermissionsResolverService]
 })
-export class AuthModule {}
+export class AuthModule { }

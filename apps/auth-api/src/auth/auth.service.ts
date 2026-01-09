@@ -14,6 +14,7 @@ import { ModuleEntity } from "@common/entities/module.entity";
 import { hashPassword, verifyPassword } from "@common/security/password";
 import { hashToken, verifyToken } from "@common/security/token-hash";
 import { OutboxService } from "../outbox/outbox.service";
+import { EmailService } from "@common/email/email.service";
 
 // Tipos para el payload de permisos en el JWT
 type ActionPermissions = { [actionName: string]: boolean };
@@ -43,7 +44,8 @@ export class AuthService {
     private dataSource: DataSource,
     private jwt: JwtService,
     private cfg: ConfigService,
-    private outbox: OutboxService
+    private outbox: OutboxService,
+    private emailService: EmailService
   ) { }
 
   private accessPrivateKey() {
@@ -184,13 +186,17 @@ export class AuthService {
     const existing = await this.users.findOne({ where: { email } });
     if (existing) throw new BadRequestException("Email already registered");
 
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
     const user = this.users.create({
       email,
       password_hash: await hashPassword(password),
       document_number,
       first_name,
       last_name,
-      is_active: true
+      is_active: true,
+      email_verified: false,
+      verification_code: verificationCode
     });
 
     const saved = await this.users.save(user);
@@ -199,7 +205,120 @@ export class AuthService {
 
     await this.outbox.enqueue("Auth.UserCreated", { userId: saved.id, email: saved.email }, requestId);
 
+    try {
+      await this.emailService.sendTemplateEmail(
+        saved.email,
+        "Verifica tu cuenta - TASS SPD",
+        "verification.html",
+        {
+          name: saved.first_name,
+          code: verificationCode
+        }
+      );
+    } catch (e) {
+      // Log error but don't fail registration
+    }
+
     return saved;
+  }
+
+  async verifyEmail(email: string, code: string) {
+    const user = await this.users.findOne({ where: { email } });
+    if (!user) throw new BadRequestException("Usuario no encontrado");
+
+    if (user.email_verified) return { ok: true, message: "Email ya verificado" };
+
+    if (user.verification_code !== code) {
+      throw new BadRequestException("Código de verificación inválido");
+    }
+
+    user.email_verified = true;
+    user.verification_code = null;
+    await this.users.save(user);
+
+    return { ok: true, message: "Email verificado correctamente" };
+  }
+
+  async resendVerificationCode(email: string) {
+    const user = await this.users.findOne({ where: { email } });
+    if (!user) throw new BadRequestException("Usuario no encontrado");
+
+    if (user.email_verified) return { ok: true, message: "Email ya verificado" };
+
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    user.verification_code = verificationCode;
+    await this.users.save(user);
+
+    try {
+      await this.emailService.sendTemplateEmail(
+        user.email,
+        "Nuevo código de verificación - TASS SPD",
+        "verification.html",
+        {
+          name: user.first_name,
+          code: verificationCode
+        }
+      );
+    } catch (e) {
+      // Log error
+    }
+
+    return { ok: true, message: "Código reenviado correctamente" };
+  }
+
+  async changePassword(userId: string, current: string, newPass: string) {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+
+    const ok = await verifyPassword(current, user.password_hash);
+    if (!ok) throw new BadRequestException("Contraseña actual incorrecta");
+
+    user.password_hash = await hashPassword(newPass);
+    await this.users.save(user);
+
+    return { ok: true, message: "Contraseña actualizada correctamente" };
+  }
+
+  async forgotPassword(email: string) {
+    const user = await this.users.findOne({ where: { email } });
+    if (!user) return { ok: true, message: "Si el correo existe, se enviará un código" };
+
+    if (!user.email_verified) throw new BadRequestException("El correo no está verificado");
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    user.verification_code = code;
+    await this.users.save(user);
+
+    try {
+      await this.emailService.sendTemplateEmail(
+        user.email,
+        "Restablecer Contraseña - TASS SPD",
+        "reset-password.html",
+        {
+          name: user.first_name,
+          code
+        }
+      );
+    } catch (e) {
+      // Log
+    }
+
+    return { ok: true, message: "Si el correo existe, se enviará un código" };
+  }
+
+  async resetPassword(email: string, code: string, newPass: string) {
+    const user = await this.users.findOne({ where: { email } });
+    if (!user) throw new BadRequestException("Usuario no encontrado");
+
+    if (user.verification_code !== code) {
+      throw new BadRequestException("Código inválido");
+    }
+
+    user.password_hash = await hashPassword(newPass);
+    user.verification_code = null;
+    await this.users.save(user);
+
+    return { ok: true, message: "Contraseña restablecida correctamente" };
   }
 
   private async assignDefaultRole(userId: string) {

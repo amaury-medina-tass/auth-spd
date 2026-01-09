@@ -3,6 +3,11 @@ import type { Request, Response } from "express";
 import { ConfigService } from "@nestjs/config";
 import { AuthService } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
+import { VerifyEmailDto } from "./dto/verify-email.dto";
+import { ResendVerificationDto } from "./dto/resend-verification.dto";
+import { ChangePasswordDto } from "./dto/change-password.dto";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { LoginDto } from "./dto/login.dto";
 import { setAuthCookies, clearAuthCookies } from "./cookies";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
@@ -10,7 +15,7 @@ import { ResponseMessage } from "../common/decorators/response-message.decorator
 
 @Controller("auth")
 export class AuthController {
-  constructor(private auth: AuthService, private cfg: ConfigService) {}
+  constructor(private auth: AuthService, private cfg: ConfigService) { }
 
   private cookieOpts() {
     return {
@@ -33,6 +38,37 @@ export class AuthController {
       requestId
     );
     return { id: user.id, email: user.email };
+  }
+
+  @Post("verify-email")
+  @ResponseMessage("Email verificado correctamente")
+  async verify(@Body() dto: VerifyEmailDto) {
+    return this.auth.verifyEmail(dto.email, dto.code);
+  }
+
+  @Post("resend-verification")
+  @ResponseMessage("Código reenviado correctamente")
+  async resend(@Body() dto: ResendVerificationDto) {
+    return this.auth.resendVerificationCode(dto.email);
+  }
+
+  @Post("change-password")
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage("Contraseña actualizada correctamente")
+  async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
+    return this.auth.changePassword(req.user.sub, dto.currentPassword, dto.newPassword);
+  }
+
+  @Post("forgot-password")
+  @ResponseMessage("Solicitud procesada")
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.forgotPassword(dto.email);
+  }
+
+  @Post("reset-password")
+  @ResponseMessage("Contraseña restablecida correctamente")
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto.email, dto.code, dto.newPassword);
   }
 
   @Post("login")

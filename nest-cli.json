@@ -5,7 +5,10 @@
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": true,
-    "tsConfigPath": "apps/auth-api/tsconfig.app.json"
+    "tsConfigPath": "apps/auth-api/tsconfig.app.json",
+    "assets": [
+      "**/*.html"
+    ]
   },
   "monorepo": true,
   "root": ".",
@@ -16,7 +19,13 @@
       "entryFile": "main",
       "sourceRoot": "apps/auth-api/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/auth-api/tsconfig.app.json"
+        "tsConfigPath": "apps/auth-api/tsconfig.app.json",
+        "assets": [
+          {
+            "include": "../../../libs/common/src/email/templates/**/*",
+            "outDir": "templates"
+          }
+        ]
       }
     },
     "auth-worker": {

@@ -191,4 +191,23 @@ export class UsersService {
     const { password_hash, ...result } = user;
     return result;
   }
+
+  async delete(id: string) {
+    const user = await this.repo.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
+    }
+
+    // Eliminar primero las relaciones usuario-rol
+    await this.userRoleRepo.delete({ user_id: id });
+
+    // Eliminar el usuario
+    await this.repo.remove(user);
+
+    return {
+      id,
+      email: user.email,
+      deletedAt: new Date()
+    };
+  }
 }

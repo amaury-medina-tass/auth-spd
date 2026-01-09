@@ -45,4 +45,10 @@ export class UsersController {
   unassignRole(@Body() dto: AssignRoleDto) {
     return this.svc.unassignRole(dto.userId, dto.roleId);
   }
+
+  @Delete(":id")
+  @ResponseMessage("Usuario eliminado exitosamente")
+  delete(@Param("id") id: string) {
+    return this.svc.delete(id);
+  }
 }
