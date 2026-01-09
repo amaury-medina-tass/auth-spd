@@ -1,52 +1,68 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Repository, ILike } from "typeorm";
 import { Role } from "@common/entities/role.entity";
-import { RolePermission } from "@common/entities/role-permission.entity";
-import { OutboxService } from "../outbox/outbox.service";
 
 @Injectable()
 export class RolesService {
   constructor(
-    @InjectRepository(Role) private roles: Repository<Role>,
-    @InjectRepository(RolePermission) private rolePerms: Repository<RolePermission>,
-    private outbox: OutboxService
+    @InjectRepository(Role) private repo: Repository<Role>
   ) { }
 
-  list() {
-    return this.roles.find();
-  }
+  private readonly sortableFields = ["name", "is_active", "created_at", "updated_at"];
 
-  async create(input: { name: string; description?: string }) {
-    const role = this.roles.create({
-      name: input.name,
-      description: input.description ?? null,
-      is_active: true
+  /**
+   * Lista general de roles (solo id y nombre)
+   */
+  async findAll() {
+    return this.repo.find({
+      select: ["id", "name"],
+      order: { name: "ASC" }
     });
-    return this.roles.save(role);
   }
 
-  async setRolePermissions(
-    roleId: string,
-    permissionIdsAllowed: Array<{ permissionId: string; allowed: boolean }>,
-    requestId: string
+  /**
+   * Lista paginada de roles
+   */
+  async findAllPaginated(
+    page: number = 1,
+    limit: number = 10,
+    search?: string,
+    sortBy?: string,
+    sortOrder?: "ASC" | "DESC"
   ) {
-    const role = await this.roles.findOne({ where: { id: roleId } });
-    if (!role) throw new NotFoundException("Role not found");
+    const skip = (page - 1) * limit;
 
-    for (const p of permissionIdsAllowed) {
-      await this.rolePerms.upsert(
-        {
-          role_id: roleId,
-          permission_id: p.permissionId,
-          allowed: p.allowed,
-          updated_at: new Date()
-        },
-        ["role_id", "permission_id"]
-      );
-    }
+    const whereCondition = search
+      ? [
+        { name: ILike(`%${search}%`) },
+        { description: ILike(`%${search}%`) }
+      ]
+      : {};
 
-    await this.outbox.enqueue("Auth.RolePermissionsChanged", { roleId }, requestId);
-    return { ok: true };
+    const validSortBy = sortBy && this.sortableFields.includes(sortBy) ? sortBy : "created_at";
+    const validSortOrder = sortOrder === "ASC" || sortOrder === "DESC" ? sortOrder : "DESC";
+
+    const [data, total] = await this.repo.findAndCount({
+      select: ["id", "name", "description", "is_active", "created_at", "updated_at"],
+      where: whereCondition,
+      skip,
+      take: limit,
+      order: { [validSortBy]: validSortOrder }
+    });
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    };
   }
 }

@@ -231,7 +231,22 @@ export class AuthService {
   async me(userId: string) {
     const user = await this.users.findOne({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
-    return { id: user.id, email: user.email, is_active: user.is_active };
+
+    const [permissions, roles] = await Promise.all([
+      this.getUserPermissions(userId),
+      this.getUserRoles(userId)
+    ]);
+
+    const fullName = `${user.first_name} ${user.last_name}`.trim();
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: fullName,
+      is_active: user.is_active,
+      roles,
+      permissions
+    };
   }
 
   async logout(userId: string, refreshToken?: string) {

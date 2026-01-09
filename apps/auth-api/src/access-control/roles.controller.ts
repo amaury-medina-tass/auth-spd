@@ -1,27 +1,28 @@
-import { Body, Controller, Get, Post, Put, Param, UseGuards } from "@nestjs/common";
+import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesService } from "./roles.service";
+import { ResponseMessage } from "../common/decorators/response-message.decorator";
 
 @Controller("access-control/roles")
 @UseGuards(JwtAuthGuard)
 export class RolesController {
-  constructor(private svc: RolesService) {}
+  constructor(private svc: RolesService) { }
 
   @Get()
-  list() {
-    return this.svc.list();
-  }
-
-  @Post()
-  create(@Body() body: { name: string; description?: string }) {
-    return this.svc.create(body);
-  }
-
-  @Put(":id/permissions")
-  setPermissions(
-    @Param("id") id: string,
-    @Body() body: { items: Array<{ permissionId: string; allowed: boolean }> }
+  @ResponseMessage("Lista de roles obtenida")
+  list(
+    @Query("page") page: string = "1",
+    @Query("limit") limit: string = "10",
+    @Query("search") search?: string,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder?: "ASC" | "DESC"
   ) {
-    return this.svc.setRolePermissions(id, body.items ?? []);
+    return this.svc.findAllPaginated(+page, +limit, search, sortBy, sortOrder);
+  }
+
+  @Get("all")
+  @ResponseMessage("Lista completa de roles obtenida")
+  listAll() {
+    return this.svc.findAll();
   }
 }
