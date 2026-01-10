@@ -183,7 +183,7 @@ export class AuthService {
     ]);
 
     const accessToken = await this.tokenService.signAccessToken(user, roles, permissions, system);
-    const refreshToken = await this.tokenService.signRefreshToken(user);
+    const refreshToken = await this.tokenService.signRefreshToken(user, system);
 
     await this.tokenService.storeRefreshToken(user.id, refreshToken);
 
@@ -199,12 +199,11 @@ export class AuthService {
       this.getUserRoles(userId)
     ]);
 
-    const fullName = `${user.first_name} ${user.last_name}`.trim();
-
     return {
       id: user.id,
       email: user.email,
-      name: fullName,
+      first_name: user.first_name,
+      last_name: user.last_name,
       is_active: user.is_active,
       roles,
       permissions
@@ -237,8 +236,9 @@ export class AuthService {
       this.getUserRoles(user.id)
     ]);
 
-    const newAccess = await this.tokenService.signAccessToken(user, roles, permissions);
-    const newRefresh = await this.tokenService.signRefreshToken(user);
+    const system = decoded.system as string;
+    const newAccess = await this.tokenService.signAccessToken(user, roles, permissions, system);
+    const newRefresh = await this.tokenService.signRefreshToken(user, system);
     await this.tokenService.storeRefreshToken(userId, newRefresh);
 
     return { user, accessToken: newAccess, refreshToken: newRefresh };

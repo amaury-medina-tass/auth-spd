@@ -65,10 +65,10 @@ export class TokenService {
         );
     }
 
-    async signRefreshToken(user: User) {
+    async signRefreshToken(user: User, system: string) {
         const jti = randomUUID();
         return this.jwt.signAsync(
-            { sub: user.id, jti },
+            { sub: user.id, jti, system },
             { algorithm: "RS256", privateKey: this.refreshPrivateKey(), expiresIn: this.refreshExpiresIn() as any }
         );
     }
