@@ -1,9 +1,6 @@
 import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { JwtService } from "@nestjs/jwt";
 import { DataSource, Repository } from "typeorm";
-import { ConfigService } from "@nestjs/config";
-import { randomUUID } from "crypto";
 
 import { User } from "@common/entities/user.entity";
 import { Role } from "@common/entities/role.entity";
@@ -12,26 +9,17 @@ import { RefreshToken } from "@common/entities/refresh-token.entity";
 import { ActionEntity } from "@common/entities/action.entity";
 import { ModuleEntity } from "@common/entities/module.entity";
 import { hashPassword, verifyPassword } from "@common/security/password";
-import { hashToken, verifyToken } from "@common/security/token-hash";
+import { ErrorCodes } from "@common/errors/error-codes";
 import { OutboxService } from "../outbox/outbox.service";
-import { EmailService } from "@common/email/email.service";
+import { TokenService, PermissionsPayload } from "./services/token.service";
+import { VerificationService } from "./services/verification.service";
 
-// Tipos para el payload de permisos en el JWT
 type ActionPermissions = { [actionName: string]: boolean };
-interface ModulePermissions {
-  name: string;
-  actions: ActionPermissions;
-}
-type PermissionsPayload = { [modulePath: string]: ModulePermissions };
 
 interface UserPermissionRow {
   module_path: string;
   module_name: string;
   action_name: string;
-}
-
-interface UserRoleRow {
-  role_name: string;
 }
 
 @Injectable()
@@ -42,35 +30,11 @@ export class AuthService {
     @InjectRepository(Role) private roles: Repository<Role>,
     @InjectRepository(UserRole) private userRoles: Repository<UserRole>,
     private dataSource: DataSource,
-    private jwt: JwtService,
-    private cfg: ConfigService,
     private outbox: OutboxService,
-    private emailService: EmailService
+    private tokenService: TokenService,
+    private verificationService: VerificationService
   ) { }
 
-  private accessPrivateKey() {
-    return this.cfg.get<string>("jwt.accessPrivateKey");
-  }
-  private accessPublicKey() {
-    return this.cfg.get<string>("jwt.accessPublicKey");
-  }
-  private refreshPrivateKey() {
-    return this.cfg.get<string>("jwt.refreshPrivateKey");
-  }
-  private refreshPublicKey() {
-    return this.cfg.get<string>("jwt.refreshPublicKey");
-  }
-
-  private accessExpiresIn() {
-    return this.cfg.get<string>("jwt.accessExpiresIn") ?? "10m";
-  }
-  private refreshExpiresIn() {
-    return this.cfg.get<string>("jwt.refreshExpiresIn") ?? "30d";
-  }
-
-  /**
-   * Obtiene los roles activos asignados al usuario.
-   */
   private async getUserRoles(userId: string): Promise<string[]> {
     const userRolesData = await this.userRoles.find({
       where: { user_id: userId, role: { is_active: true } },
@@ -79,24 +43,16 @@ export class AuthService {
     return userRolesData.map((ur) => ur.role.name);
   }
 
-  /**
-   * Obtiene todos los permisos del usuario agrupados por path del módulo.
-   * Cada módulo contiene nombre y un objeto con las acciones disponibles como booleanos.
-   * Las acciones que el usuario no tiene asignadas se marcan como false.
-   */
   private async getUserPermissions(userId: string): Promise<PermissionsPayload> {
-    // Obtener todas las acciones disponibles
     const allActions = await this.dataSource
       .getRepository(ActionEntity)
       .find({ select: ["name"] });
     const actionNames = allActions.map((a) => a.name);
 
-    // Obtener todos los módulos con nombre y path
     const allModules = await this.dataSource
       .getRepository(ModuleEntity)
       .find({ select: ["name", "path"] });
 
-    // Obtener permisos del usuario
     const userPermissions = await this.dataSource.query<UserPermissionRow[]>(
       `
       SELECT
@@ -115,12 +71,10 @@ export class AuthService {
       [userId]
     );
 
-    // Crear set de permisos para búsqueda rápida
     const permissionSet = new Set(
       userPermissions.map((p) => `${p.module_path}:${p.action_name}`)
     );
 
-    // Construir payload con todos los módulos y acciones
     const permissions: PermissionsPayload = {};
     for (const mod of allModules) {
       const actions: ActionPermissions = {};
@@ -136,57 +90,39 @@ export class AuthService {
     return permissions;
   }
 
-  private async signAccessToken(user: User) {
-    const [permissions, roles] = await Promise.all([
-      this.getUserPermissions(user.id),
-      this.getUserRoles(user.id)
-    ]);
-
-    const fullName = `${user.first_name} ${user.last_name}`.trim();
-
-    return this.jwt.signAsync(
-      {
-        sub: user.id,
-        email: user.email,
-        name: fullName,
-        roles,
-        permissions
-      },
-      { algorithm: "RS256", privateKey: this.accessPrivateKey(), expiresIn: this.accessExpiresIn() as any }
-    );
-  }
-
-  private async signRefreshToken(user: User) {
-    const jti = randomUUID();
-    return this.jwt.signAsync(
-      { sub: user.id, jti },
-      { algorithm: "RS256", privateKey: this.refreshPrivateKey(), expiresIn: this.refreshExpiresIn() as any }
-    );
-  }
-
-  private async verifyRefreshToken(token: string) {
-    try {
-      return await this.jwt.verifyAsync(token, {
-        algorithms: ["RS256"],
-        publicKey: this.refreshPublicKey()
-      });
-    } catch {
-      throw new UnauthorizedException("Invalid refresh token");
-    }
-  }
-
   async register(
     email: string,
     password: string,
     document_number: string,
     first_name: string,
     last_name: string,
+    system: string,
     requestId: string
   ) {
-    const existing = await this.users.findOne({ where: { email } });
-    if (existing) throw new BadRequestException("Email already registered");
+    const existingByEmail = await this.users.findOne({ where: { email } });
+    const existingByDocument = await this.users.findOne({ where: { document_number } });
 
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    if (existingByEmail && existingByDocument && existingByEmail.id !== existingByDocument.id) {
+      throw new BadRequestException({ message: "Email y documento pertenecen a usuarios diferentes", code: ErrorCodes.EMAIL_ALREADY_REGISTERED });
+    }
+
+    const existingUser = existingByEmail || existingByDocument;
+
+    if (existingUser) {
+      const hasRoleInSystem = await this.userRoles.findOne({
+        where: { user_id: existingUser.id, role: { system: system as any } },
+        relations: ['role']
+      });
+
+      if (hasRoleInSystem) {
+        throw new BadRequestException({ message: `Usuario ya registrado en el sistema ${system}`, code: ErrorCodes.EMAIL_ALREADY_REGISTERED });
+      }
+
+      await this.assignDefaultRole(existingUser.id, system);
+      return { user: existingUser, isNewUser: false };
+    }
+
+    const verificationCode = this.verificationService.generateVerificationCode();
 
     const user = this.users.create({
       email,
@@ -201,155 +137,62 @@ export class AuthService {
 
     const saved = await this.users.save(user);
 
-    await this.assignDefaultRole(saved.id);
+    await this.assignDefaultRole(saved.id, system);
 
     await this.outbox.enqueue("Auth.UserCreated", { userId: saved.id, email: saved.email }, requestId);
 
-    try {
-      await this.emailService.sendTemplateEmail(
-        saved.email,
-        "Verifica tu cuenta - TASS SPD",
-        "verification.html",
-        {
-          name: saved.first_name,
-          code: verificationCode
-        }
-      );
-    } catch (e) {
-      // Log error but don't fail registration
-    }
+    await this.verificationService.sendVerificationEmail(saved, verificationCode);
 
-    return saved;
+    return { user: saved, isNewUser: true };
   }
 
-  async verifyEmail(email: string, code: string) {
+  private async assignDefaultRole(userId: string, system: string) {
+    const role = await this.roles.findOne({ where: { is_default: true, system: system as any } });
+
+    if (!role) {
+      throw new BadRequestException({ message: `No se encontró un rol por defecto para el sistema ${system}`, code: ErrorCodes.DEFAULT_ROLE_NOT_FOUND });
+    }
+
+    await this.userRoles.save({
+      user_id: userId,
+      role_id: role.id
+    });
+  }
+
+  async login(email: string, password: string, system: string) {
     const user = await this.users.findOne({ where: { email } });
-    if (!user) throw new BadRequestException("Usuario no encontrado");
+    if (!user) throw new UnauthorizedException({ message: "Credenciales inválidas", code: ErrorCodes.INVALID_CREDENTIALS });
 
-    if (user.email_verified) return { ok: true, message: "Email ya verificado" };
+    if (!user.is_active) throw new UnauthorizedException({ message: "Usuario inactivo", code: ErrorCodes.USER_INACTIVE });
 
-    if (user.verification_code !== code) {
-      throw new BadRequestException("Código de verificación inválido");
-    }
+    if (!user.email_verified) throw new UnauthorizedException({ message: "Email no verificado", code: ErrorCodes.EMAIL_NOT_VERIFIED, email: user.email });
 
-    user.email_verified = true;
-    user.verification_code = null;
-    await this.users.save(user);
+    const hasRoleInSystem = await this.userRoles.findOne({
+      where: { user_id: user.id, role: { system: system as any } },
+      relations: ['role']
+    });
 
-    return { ok: true, message: "Email verificado correctamente" };
-  }
-
-  async resendVerificationCode(email: string) {
-    const user = await this.users.findOne({ where: { email } });
-    if (!user) throw new BadRequestException("Usuario no encontrado");
-
-    if (user.email_verified) return { ok: true, message: "Email ya verificado" };
-
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    user.verification_code = verificationCode;
-    await this.users.save(user);
-
-    try {
-      await this.emailService.sendTemplateEmail(
-        user.email,
-        "Nuevo código de verificación - TASS SPD",
-        "verification.html",
-        {
-          name: user.first_name,
-          code: verificationCode
-        }
-      );
-    } catch (e) {
-      // Log error
-    }
-
-    return { ok: true, message: "Código reenviado correctamente" };
-  }
-
-  async changePassword(userId: string, current: string, newPass: string) {
-    const user = await this.users.findOne({ where: { id: userId } });
-    if (!user) throw new UnauthorizedException();
-
-    const ok = await verifyPassword(current, user.password_hash);
-    if (!ok) throw new BadRequestException("Contraseña actual incorrecta");
-
-    user.password_hash = await hashPassword(newPass);
-    await this.users.save(user);
-
-    return { ok: true, message: "Contraseña actualizada correctamente" };
-  }
-
-  async forgotPassword(email: string) {
-    const user = await this.users.findOne({ where: { email } });
-    if (!user) return { ok: true, message: "Si el correo existe, se enviará un código" };
-
-    if (!user.email_verified) throw new BadRequestException("El correo no está verificado");
-
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    user.verification_code = code;
-    await this.users.save(user);
-
-    try {
-      await this.emailService.sendTemplateEmail(
-        user.email,
-        "Restablecer Contraseña - TASS SPD",
-        "reset-password.html",
-        {
-          name: user.first_name,
-          code
-        }
-      );
-    } catch (e) {
-      // Log
-    }
-
-    return { ok: true, message: "Si el correo existe, se enviará un código" };
-  }
-
-  async resetPassword(email: string, code: string, newPass: string) {
-    const user = await this.users.findOne({ where: { email } });
-    if (!user) throw new BadRequestException("Usuario no encontrado");
-
-    if (user.verification_code !== code) {
-      throw new BadRequestException("Código inválido");
-    }
-
-    user.password_hash = await hashPassword(newPass);
-    user.verification_code = null;
-    await this.users.save(user);
-
-    return { ok: true, message: "Contraseña restablecida correctamente" };
-  }
-
-  private async assignDefaultRole(userId: string) {
-    const role = await this.roles.findOne({ where: { is_default: true } });
-
-    if (role) {
-      await this.userRoles.save({
-        user_id: userId,
-        role_id: role.id
-      });
-    }
-  }
-
-  async login(email: string, password: string) {
-    const user = await this.users.findOne({ where: { email } });
-    if (!user || !user.is_active) throw new UnauthorizedException("Invalid credentials");
+    if (!hasRoleInSystem) throw new UnauthorizedException({ message: `Usuario no registrado en el sistema ${system}`, code: ErrorCodes.NOT_REGISTERED_IN_SYSTEM });
 
     const ok = await verifyPassword(password, user.password_hash);
-    if (!ok) throw new UnauthorizedException("Invalid credentials");
+    if (!ok) throw new UnauthorizedException({ message: "Credenciales inválidas", code: ErrorCodes.INVALID_CREDENTIALS });
 
-    const accessToken = await this.signAccessToken(user);
-    const refreshToken = await this.signRefreshToken(user);
+    const [permissions, roles] = await Promise.all([
+      this.getUserPermissions(user.id),
+      this.getUserRoles(user.id)
+    ]);
 
-    await this.storeRefreshToken(user.id, refreshToken);
+    const accessToken = await this.tokenService.signAccessToken(user, roles, permissions, system);
+    const refreshToken = await this.tokenService.signRefreshToken(user);
+
+    await this.tokenService.storeRefreshToken(user.id, refreshToken);
 
     return { user, accessToken, refreshToken };
   }
 
   async me(userId: string) {
     const user = await this.users.findOne({ where: { id: userId } });
-    if (!user) throw new UnauthorizedException();
+    if (!user) throw new UnauthorizedException({ message: "Usuario no encontrado", code: ErrorCodes.USER_NOT_FOUND });
 
     const [permissions, roles] = await Promise.all([
       this.getUserPermissions(userId),
@@ -370,68 +213,34 @@ export class AuthService {
 
   async logout(userId: string, refreshToken?: string) {
     if (refreshToken) {
-      await this.revokeRefreshToken(userId, refreshToken);
+      await this.tokenService.revokeRefreshToken(userId, refreshToken);
     } else {
-      await this.refreshTokens.update({ user_id: userId }, { revoked: true, updated_at: new Date() });
+      await this.tokenService.revokeAllUserTokens(userId);
     }
     return { ok: true };
   }
 
   async refresh(refreshToken: string) {
-    const decoded: any = await this.verifyRefreshToken(refreshToken);
+    const decoded: any = await this.tokenService.verifyRefreshToken(refreshToken);
 
     const userId = decoded.sub as string;
     const user = await this.users.findOne({ where: { id: userId } });
-    if (!user || !user.is_active) throw new UnauthorizedException("User inactive");
+    if (!user || !user.is_active) throw new UnauthorizedException({ message: "Usuario inactivo", code: ErrorCodes.USER_INACTIVE });
 
-    const validRow = await this.findValidRefreshTokenRow(userId, refreshToken);
-    if (!validRow) throw new UnauthorizedException("Refresh token revoked/invalid");
+    const validRow = await this.tokenService.findValidRefreshTokenRow(userId, refreshToken);
+    if (!validRow) throw new UnauthorizedException({ message: "Token de refresco revocado o inválido", code: ErrorCodes.REFRESH_TOKEN_REVOKED });
 
     await this.refreshTokens.update({ id: validRow.id }, { revoked: true, updated_at: new Date() });
 
-    const newAccess = await this.signAccessToken(user);
-    const newRefresh = await this.signRefreshToken(user);
-    await this.storeRefreshToken(userId, newRefresh);
+    const [permissions, roles] = await Promise.all([
+      this.getUserPermissions(user.id),
+      this.getUserRoles(user.id)
+    ]);
+
+    const newAccess = await this.tokenService.signAccessToken(user, roles, permissions);
+    const newRefresh = await this.tokenService.signRefreshToken(user);
+    await this.tokenService.storeRefreshToken(userId, newRefresh);
 
     return { user, accessToken: newAccess, refreshToken: newRefresh };
-  }
-
-  private async storeRefreshToken(userId: string, token: string) {
-    const expiresAt = this.computeRefreshExpiry();
-    await this.refreshTokens.insert({
-      user_id: userId,
-      token_hash: await hashToken(token),
-      revoked: false,
-      expires_at: expiresAt
-    });
-  }
-
-  private computeRefreshExpiry(): Date {
-    // Simple: 30 días (si quieres, lo hacemos parseando refreshExpiresIn)
-    const d = new Date();
-    d.setDate(d.getDate() + 30);
-    return d;
-  }
-
-  private async findValidRefreshTokenRow(userId: string, raw: string) {
-    const rows = await this.refreshTokens.find({
-      where: { user_id: userId, revoked: false },
-      order: { created_at: "DESC" },
-      take: 10
-    });
-
-    const now = new Date();
-    for (const row of rows) {
-      if (row.expires_at <= now) continue;
-      const ok = await verifyToken(raw, row.token_hash);
-      if (ok) return row;
-    }
-    return null;
-  }
-
-  private async revokeRefreshToken(userId: string, raw: string) {
-    const row = await this.findValidRefreshTokenRow(userId, raw);
-    if (!row) return;
-    await this.refreshTokens.update({ id: row.id }, { revoked: true, updated_at: new Date() });
   }
 }

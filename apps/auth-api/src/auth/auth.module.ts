@@ -15,8 +15,11 @@ import { ActionEntity } from "@common/entities/action.entity";
 
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
+import { TokenService } from "./services/token.service";
+import { PasswordService } from "./services/password.service";
+import { VerificationService } from "./services/verification.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
-import { PermissionsResolverService } from "./permissions-resolver.service";
+import { PermissionsResolverService } from "./services/permissions-resolver.service";
 import { OutboxModule } from "../outbox/outbox.module";
 import { EmailModule } from "@common/email/email.module";
 
@@ -38,7 +41,6 @@ import { EmailModule } from "@common/email/email.module";
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
-        // Para access token
         privateKey: cfg.get<string>("jwt.accessPrivateKey"),
         publicKey: cfg.get<string>("jwt.accessPublicKey"),
         signOptions: {
@@ -49,7 +51,14 @@ import { EmailModule } from "@common/email/email.module";
     })
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, PermissionsResolverService],
+  providers: [
+    AuthService,
+    TokenService,
+    PasswordService,
+    VerificationService,
+    JwtStrategy,
+    PermissionsResolverService
+  ],
   exports: [AuthService, PermissionsResolverService]
 })
 export class AuthModule { }

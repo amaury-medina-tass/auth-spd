@@ -4,6 +4,7 @@ import { Repository, ILike } from "typeorm";
 import { User } from "@common/entities/user.entity";
 import { UserRole } from "@common/entities/user-role.entity";
 import { Role } from "@common/entities/role.entity";
+import { ErrorCodes } from "@common/errors/error-codes";
 
 @Injectable()
 export class UsersService {
@@ -18,35 +19,39 @@ export class UsersService {
   async findAllPaginated(
     page: number = 1,
     limit: number = 10,
+    system: string,
     search?: string,
     sortBy?: string,
     sortOrder?: "ASC" | "DESC"
   ) {
     const skip = (page - 1) * limit;
-
-    const whereCondition = search
-      ? [
-        { email: ILike(`%${search}%`) },
-        { first_name: ILike(`%${search}%`) },
-        { last_name: ILike(`%${search}%`) },
-        { document_number: ILike(`%${search}%`) }
-      ]
-      : {};
-
-    // Validar campo de ordenamiento
     const validSortBy = sortBy && this.sortableFields.includes(sortBy) ? sortBy : "created_at";
     const validSortOrder = sortOrder === "ASC" || sortOrder === "DESC" ? sortOrder : "DESC";
 
-    const [users, total] = await this.repo.findAndCount({
-      select: ["id", "email", "first_name", "last_name", "document_number", "is_active", "created_at", "updated_at"],
-      relations: ["user_roles", "user_roles.role"],
-      where: whereCondition,
-      skip,
-      take: limit,
-      order: { [validSortBy]: validSortOrder }
-    });
+    let query = this.repo
+      .createQueryBuilder("user")
+      .select([
+        "user.id", "user.email", "user.first_name", "user.last_name",
+        "user.document_number", "user.is_active", "user.created_at", "user.updated_at"
+      ])
+      .innerJoin("user.user_roles", "ur")
+      .innerJoin("ur.role", "role", "role.system = :system", { system })
+      .leftJoinAndSelect("user.user_roles", "user_roles")
+      .leftJoinAndSelect("user_roles.role", "user_role");
 
-    // Transformar los datos para incluir los roles
+    if (search) {
+      query = query.andWhere(
+        "(user.email ILIKE :search OR user.first_name ILIKE :search OR user.last_name ILIKE :search OR user.document_number ILIKE :search)",
+        { search: `%${search}%` }
+      );
+    }
+
+    const [users, total] = await query
+      .orderBy(`user.${validSortBy}`, validSortOrder)
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
     const data = users.map(user => {
       const { user_roles, ...userData } = user;
       return {
@@ -70,14 +75,18 @@ export class UsersService {
     };
   }
 
-  async findOne(id: string) {
-    const user = await this.repo.findOne({
-      where: { id },
-      relations: ["user_roles", "user_roles.role"]
-    });
+  async findOne(id: string, system: string) {
+    const user = await this.repo
+      .createQueryBuilder("user")
+      .innerJoin("user.user_roles", "ur")
+      .innerJoin("ur.role", "role", "role.system = :system", { system })
+      .leftJoinAndSelect("user.user_roles", "user_roles")
+      .leftJoinAndSelect("user_roles.role", "user_role")
+      .where("user.id = :id", { id })
+      .getOne();
 
     if (!user) {
-      throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
+      throw new NotFoundException({ message: "Usuario no encontrado", code: ErrorCodes.USER_NOT_FOUND });
     }
 
     const { user_roles, ...userData } = user;
@@ -87,28 +96,30 @@ export class UsersService {
     };
   }
 
-  async assignRole(userId: string, roleId: string) {
-    // Verificar que el usuario existe
-    const user = await this.repo.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException(`Usuario con ID ${userId} no encontrado`);
+  async assignRole(userId: string, roleId: string, system: string) {
+    const userInSystem = await this.repo
+      .createQueryBuilder("user")
+      .innerJoin("user.user_roles", "ur")
+      .innerJoin("ur.role", "role", "role.system = :system", { system })
+      .where("user.id = :userId", { userId })
+      .getOne();
+
+    if (!userInSystem) {
+      throw new NotFoundException({ message: "Usuario no encontrado en este sistema", code: ErrorCodes.USER_NOT_FOUND });
     }
 
-    // Verificar que el rol existe
-    const role = await this.roleRepo.findOne({ where: { id: roleId } });
+    const role = await this.roleRepo.findOne({ where: { id: roleId, system: system as any } });
     if (!role) {
-      throw new NotFoundException(`Rol con ID ${roleId} no encontrado`);
+      throw new NotFoundException({ message: "Rol no encontrado en este sistema", code: ErrorCodes.ROLE_NOT_FOUND });
     }
 
-    // Verificar si el usuario ya tiene este rol asignado
     const existingUserRole = await this.userRoleRepo.findOne({
       where: { user_id: userId, role_id: roleId }
     });
     if (existingUserRole) {
-      throw new ConflictException(`El usuario ya tiene asignado el rol ${role.name}`);
+      throw new ConflictException({ message: `El usuario ya tiene asignado el rol ${role.name}`, code: ErrorCodes.ROLE_ALREADY_ASSIGNED });
     }
 
-    // Crear la relación usuario-rol
     const userRole = this.userRoleRepo.create({
       user_id: userId,
       role_id: roleId
@@ -124,25 +135,28 @@ export class UsersService {
     };
   }
 
-  async unassignRole(userId: string, roleId: string) {
-    // Verificar que el usuario existe
-    const user = await this.repo.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException(`Usuario con ID ${userId} no encontrado`);
+  async unassignRole(userId: string, roleId: string, system: string) {
+    const userInSystem = await this.repo
+      .createQueryBuilder("user")
+      .innerJoin("user.user_roles", "ur")
+      .innerJoin("ur.role", "role", "role.system = :system", { system })
+      .where("user.id = :userId", { userId })
+      .getOne();
+
+    if (!userInSystem) {
+      throw new NotFoundException({ message: "Usuario no encontrado en este sistema", code: ErrorCodes.USER_NOT_FOUND });
     }
 
-    // Verificar que el rol existe
-    const role = await this.roleRepo.findOne({ where: { id: roleId } });
+    const role = await this.roleRepo.findOne({ where: { id: roleId, system: system as any } });
     if (!role) {
-      throw new NotFoundException(`Rol con ID ${roleId} no encontrado`);
+      throw new NotFoundException({ message: "Rol no encontrado en este sistema", code: ErrorCodes.ROLE_NOT_FOUND });
     }
 
-    // Verificar si el usuario tiene este rol asignado
     const existingUserRole = await this.userRoleRepo.findOne({
       where: { user_id: userId, role_id: roleId }
     });
     if (!existingUserRole) {
-      throw new NotFoundException(`El usuario no tiene asignado el rol ${role.name}`);
+      throw new NotFoundException({ message: `El usuario no tiene asignado el rol ${role.name}`, code: ErrorCodes.ROLE_NOT_ASSIGNED });
     }
 
     await this.userRoleRepo.remove(existingUserRole);
@@ -155,29 +169,32 @@ export class UsersService {
     };
   }
 
-  async update(id: string, data: { email?: string; document_number?: string; first_name?: string; last_name?: string; is_active?: boolean }) {
-    const user = await this.repo.findOne({ where: { id } });
+  async update(id: string, system: string, data: { email?: string; document_number?: string; first_name?: string; last_name?: string; is_active?: boolean }) {
+    const user = await this.repo
+      .createQueryBuilder("user")
+      .innerJoin("user.user_roles", "ur")
+      .innerJoin("ur.role", "role", "role.system = :system", { system })
+      .where("user.id = :id", { id })
+      .getOne();
+
     if (!user) {
-      throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
+      throw new NotFoundException({ message: "Usuario no encontrado en este sistema", code: ErrorCodes.USER_NOT_FOUND });
     }
 
-    // Validar que el email no esté en uso por otro usuario
     if (data.email !== undefined && data.email !== user.email) {
       const existingByEmail = await this.repo.findOne({ where: { email: data.email } });
       if (existingByEmail && existingByEmail.id !== id) {
-        throw new ConflictException(`El email ${data.email} ya está en uso`);
+        throw new ConflictException({ message: `El email ${data.email} ya está en uso`, code: ErrorCodes.EMAIL_IN_USE });
       }
     }
 
-    // Validar que el número de documento no esté en uso por otro usuario
     if (data.document_number !== undefined && data.document_number !== user.document_number) {
       const existingByDocument = await this.repo.findOne({ where: { document_number: data.document_number } });
       if (existingByDocument && existingByDocument.id !== id) {
-        throw new ConflictException(`El número de documento ${data.document_number} ya está en uso`);
+        throw new ConflictException({ message: `El número de documento ${data.document_number} ya está en uso`, code: ErrorCodes.DOCUMENT_IN_USE });
       }
     }
 
-    // Solo actualizar los campos permitidos que fueron enviados
     if (data.email !== undefined) user.email = data.email;
     if (data.document_number !== undefined) user.document_number = data.document_number;
     if (data.first_name !== undefined) user.first_name = data.first_name;
@@ -192,16 +209,19 @@ export class UsersService {
     return result;
   }
 
-  async delete(id: string) {
-    const user = await this.repo.findOne({ where: { id } });
+  async delete(id: string, system: string) {
+    const user = await this.repo
+      .createQueryBuilder("user")
+      .innerJoin("user.user_roles", "ur")
+      .innerJoin("ur.role", "role", "role.system = :system", { system })
+      .where("user.id = :id", { id })
+      .getOne();
+
     if (!user) {
-      throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
+      throw new NotFoundException({ message: "Usuario no encontrado en este sistema", code: ErrorCodes.USER_NOT_FOUND });
     }
 
-    // Eliminar primero las relaciones usuario-rol
     await this.userRoleRepo.delete({ user_id: id });
-
-    // Eliminar el usuario
     await this.repo.remove(user);
 
     return {

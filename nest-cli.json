@@ -19,13 +19,7 @@
       "entryFile": "main",
       "sourceRoot": "apps/auth-api/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/auth-api/tsconfig.app.json",
-        "assets": [
-          {
-            "include": "../../../libs/common/src/email/templates/**/*",
-            "outDir": "templates"
-          }
-        ]
+        "tsConfigPath": "apps/auth-api/tsconfig.app.json"
       }
     },
     "auth-worker": {

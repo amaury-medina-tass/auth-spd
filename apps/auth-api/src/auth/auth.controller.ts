@@ -2,6 +2,8 @@ import { Body, Controller, Get, Post, Req, Res, UseGuards } from "@nestjs/common
 import type { Request, Response } from "express";
 import { ConfigService } from "@nestjs/config";
 import { AuthService } from "./auth.service";
+import { PasswordService } from "./services/password.service";
+import { VerificationService } from "./services/verification.service";
 import { RegisterDto } from "./dto/register.dto";
 import { VerifyEmailDto } from "./dto/verify-email.dto";
 import { ResendVerificationDto } from "./dto/resend-verification.dto";
@@ -15,7 +17,12 @@ import { ResponseMessage } from "../common/decorators/response-message.decorator
 
 @Controller("auth")
 export class AuthController {
-  constructor(private auth: AuthService, private cfg: ConfigService) { }
+  constructor(
+    private auth: AuthService,
+    private passwordService: PasswordService,
+    private verificationService: VerificationService,
+    private cfg: ConfigService
+  ) { }
 
   private cookieOpts() {
     return {
@@ -29,52 +36,53 @@ export class AuthController {
   @ResponseMessage("Usuario registrado exitosamente")
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const requestId = req.headers["x-request-id"] as string;
-    const user = await this.auth.register(
+    const result = await this.auth.register(
       dto.email,
       dto.password,
       dto.documentNumber,
       dto.firstName,
       dto.lastName,
+      dto.system,
       requestId
     );
-    return { id: user.id, email: user.email };
+    return { id: result.user.id, email: result.user.email, isNewUser: result.isNewUser };
   }
 
   @Post("verify-email")
   @ResponseMessage("Email verificado correctamente")
   async verify(@Body() dto: VerifyEmailDto) {
-    return this.auth.verifyEmail(dto.email, dto.code);
+    return this.verificationService.verifyEmail(dto.email, dto.code);
   }
 
   @Post("resend-verification")
   @ResponseMessage("Código reenviado correctamente")
   async resend(@Body() dto: ResendVerificationDto) {
-    return this.auth.resendVerificationCode(dto.email);
+    return this.verificationService.resendVerificationCode(dto.email);
   }
 
   @Post("change-password")
   @UseGuards(JwtAuthGuard)
   @ResponseMessage("Contraseña actualizada correctamente")
   async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
-    return this.auth.changePassword(req.user.sub, dto.currentPassword, dto.newPassword);
+    return this.passwordService.changePassword(req.user.sub, dto.currentPassword, dto.newPassword);
   }
 
   @Post("forgot-password")
   @ResponseMessage("Solicitud procesada")
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.auth.forgotPassword(dto.email);
+    return this.passwordService.forgotPassword(dto.email);
   }
 
   @Post("reset-password")
   @ResponseMessage("Contraseña restablecida correctamente")
   async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.auth.resetPassword(dto.email, dto.code, dto.newPassword);
+    return this.passwordService.resetPassword(dto.email, dto.code, dto.newPassword);
   }
 
   @Post("login")
   @ResponseMessage("Inicio de sesión exitoso")
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const { user, accessToken, refreshToken } = await this.auth.login(dto.email, dto.password);
+    const { user, accessToken, refreshToken } = await this.auth.login(dto.email, dto.password, dto.system);
     setAuthCookies(res, { accessToken, refreshToken, ...this.cookieOpts() });
     return { id: user.id, email: user.email };
   }

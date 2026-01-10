@@ -11,34 +11,32 @@ export class RolesService {
 
   private readonly sortableFields = ["name", "is_active", "created_at", "updated_at"];
 
-  /**
-   * Lista general de roles (solo id y nombre)
-   */
-  async findAll() {
+  async findAll(system: string) {
     return this.repo.find({
       select: ["id", "name"],
+      where: { system: system as any },
       order: { name: "ASC" }
     });
   }
 
-  /**
-   * Lista paginada de roles
-   */
   async findAllPaginated(
     page: number = 1,
     limit: number = 10,
+    system: string,
     search?: string,
     sortBy?: string,
     sortOrder?: "ASC" | "DESC"
   ) {
     const skip = (page - 1) * limit;
 
-    const whereCondition = search
-      ? [
-        { name: ILike(`%${search}%`) },
-        { description: ILike(`%${search}%`) }
-      ]
-      : {};
+    let whereCondition: any = { system: system as any };
+
+    if (search) {
+      whereCondition = [
+        { name: ILike(`%${search}%`), system: system as any },
+        { description: ILike(`%${search}%`), system: system as any }
+      ];
+    }
 
     const validSortBy = sortBy && this.sortableFields.includes(sortBy) ? sortBy : "created_at";
     const validSortOrder = sortOrder === "ASC" || sortOrder === "DESC" ? sortOrder : "DESC";

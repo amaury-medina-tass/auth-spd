@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength } from "class-validator";
+import { IsEmail, IsIn, IsString, MinLength } from "class-validator";
 
 export class RegisterDto {
   @IsEmail({}, { message: "El correo electrónico no es válido" })
@@ -19,4 +19,8 @@ export class RegisterDto {
   @IsString({ message: "La contraseña debe ser texto" })
   @MinLength(8, { message: "La contraseña debe tener al menos 8 caracteres" })
   password!: string;
+
+  @IsString({ message: "El sistema es requerido" })
+  @IsIn(["DAGRD", "SICGEM"], { message: "Sistema inválido" })
+  system!: string;
 }

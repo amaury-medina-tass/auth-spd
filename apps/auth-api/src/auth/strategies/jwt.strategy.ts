@@ -15,11 +15,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromExtractors([cookieExtractor]),
       ignoreExpiration: false,
       algorithms: ["RS256"],
-      secretOrKey: cfg.get<string>("jwt.accessPublicKey")
+      secretOrKey: cfg.get<string>("jwt.accessPublicKey")!
     });
   }
 
   async validate(payload: any) {
-    return payload; // { sub, email, ... }
+    return payload;
   }
 }

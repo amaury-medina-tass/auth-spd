@@ -5,7 +5,7 @@ import { ApiResponse } from "../interfaces/api-response.interface";
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
-  constructor(private readonly httpAdapterHost: HttpAdapterHost) {}
+  constructor(private readonly httpAdapterHost: HttpAdapterHost) { }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const { httpAdapter } = this.httpAdapterHost;
@@ -17,21 +17,32 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     let message = "Internal server error";
     let errors = null;
+    let errorCode: string | null = null;
+    let errorData: Record<string, any> | null = null;
 
     if (exception instanceof HttpException) {
       const response = exception.getResponse() as any;
-      message = typeof response === "string" ? response : response.message || exception.message;
-      if (typeof response === "object" && response.error) {
-           // NestJS default error structure often places validation errors in 'message' if it's an array,
-           // or we can put the specific error code/type in 'errors'.
-           // Trying to map standard NestJS validation errors to the requested format if possible.
-           if (Array.isArray(response.message)) {
-               errors = response.message.map((msg: string) => ({ message: msg }));
-               message = "Errores de validación";
-           }
+
+      if (typeof response === "string") {
+        message = response;
+      } else {
+        message = response.message || exception.message;
+        errorCode = response.code || null;
+
+        // Extract additional properties (excluding standard ones)
+        const { message: _, code: __, statusCode: ___, error: ____, ...rest } = response;
+        if (Object.keys(rest).length > 0) {
+          errorData = rest;
+        }
+
+        // Handle validation errors
+        if (Array.isArray(response.message)) {
+          errors = response.message.map((msg: string) => ({ message: msg }));
+          message = "Errores de validación";
+        }
       }
     } else {
-        console.error(exception); // Log internal errors
+      console.error(exception);
     }
 
     const responseBody: ApiResponse<null> = {
@@ -39,7 +50,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: httpStatus,
       message,
       data: null,
-      errors: errors,
+      errors: errors || (errorCode ? { code: errorCode, ...errorData } : null),
       meta: {
         timestamp: new Date().toISOString(),
         requestId: request.headers["x-request-id"] || randomUUID(),

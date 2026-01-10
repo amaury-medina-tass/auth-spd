@@ -3,11 +3,11 @@ import { RolePermission } from "./role-permission.entity";
 import { UserRole } from "./user-role.entity";
 
 @Entity({ name: "roles" })
+@Index(["name", "system"], { unique: true })
 export class Role {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
 
-  @Index({ unique: true })
   @Column({ type: "varchar", length: 200 })
   name!: string;
 
