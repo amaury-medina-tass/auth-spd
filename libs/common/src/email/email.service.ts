@@ -55,7 +55,11 @@ export class EmailService {
     }
 
     async sendTemplateEmail(to: string, subject: string, template: string, context: Record<string, string>) {
-        const templatePath = path.join(process.cwd(), 'libs', 'common', 'src', 'email', 'templates', template);
+        const templatesDir = this.configService.get<string>('EMAILS_TEMPLATE_PATH');
+        if (!templatesDir) {
+            throw new Error('EMAILS_TEMPLATE_PATH environment variable is not configured');
+        }
+        const templatePath = path.join(templatesDir, template);
         try {
             let html = fs.readFileSync(templatePath, 'utf8');
 

@@ -1,0 +1,12 @@
+# Docker Compose - ONLY FOR LOCAL DEVELOPMENT
+# For ECS/ECR production: use Task Definition environment variables or AWS Secrets Manager
+
+services:
+  auth-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
