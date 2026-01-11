@@ -10,7 +10,7 @@ import { RefreshToken } from "@common/entities/refresh-token.entity";
 import { hashToken, verifyToken } from "@common/security/token-hash";
 import { ErrorCodes } from "@common/errors/error-codes";
 
-type ActionPermissions = { [actionName: string]: boolean };
+type ActionPermissions = { [actionCode: string]: { name: string; allowed: boolean } };
 interface ModulePermissions {
     name: string;
     actions: ActionPermissions;

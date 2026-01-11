@@ -1,7 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, ILike } from "typeorm";
 import { Role } from "@common/entities/role.entity";
+import { ErrorCodes } from "@common/errors/error-codes";
+import { SystemType } from "@common/types/system";
 
 @Injectable()
 export class RolesService {
@@ -11,10 +13,10 @@ export class RolesService {
 
   private readonly sortableFields = ["name", "is_active", "created_at", "updated_at"];
 
-  async findAll(system: string) {
+  async findAll(system: SystemType) {
     return this.repo.find({
       select: ["id", "name"],
-      where: { system: system as any },
+      where: { system },
       order: { name: "ASC" }
     });
   }
@@ -22,19 +24,19 @@ export class RolesService {
   async findAllPaginated(
     page: number = 1,
     limit: number = 10,
-    system: string,
+    system: SystemType,
     search?: string,
     sortBy?: string,
     sortOrder?: "ASC" | "DESC"
   ) {
     const skip = (page - 1) * limit;
 
-    let whereCondition: any = { system: system as any };
+    let whereCondition: any = { system };
 
     if (search) {
       whereCondition = [
-        { name: ILike(`%${search}%`), system: system as any },
-        { description: ILike(`%${search}%`), system: system as any }
+        { name: ILike(`%${search}%`), system },
+        { description: ILike(`%${search}%`), system }
       ];
     }
 
@@ -42,7 +44,7 @@ export class RolesService {
     const validSortOrder = sortOrder === "ASC" || sortOrder === "DESC" ? sortOrder : "DESC";
 
     const [data, total] = await this.repo.findAndCount({
-      select: ["id", "name", "description", "is_active", "created_at", "updated_at"],
+      select: ["id", "name", "description", "is_active", "is_default", "created_at", "updated_at"],
       where: whereCondition,
       skip,
       take: limit,
@@ -63,4 +65,91 @@ export class RolesService {
       }
     };
   }
+
+  async findOne(id: string, system: SystemType) {
+    const role = await this.repo.findOne({
+      where: { id, system }
+    });
+
+    if (!role) {
+      throw new NotFoundException({ message: "Rol no encontrado", code: ErrorCodes.ROLE_NOT_FOUND });
+    }
+
+    return role;
+  }
+
+  async create(data: { name: string; description?: string; is_default?: boolean }, system: SystemType) {
+    const existing = await this.repo.findOne({
+      where: { name: data.name, system }
+    });
+
+    if (existing) {
+      throw new ConflictException({ message: `Ya existe un rol con el nombre "${data.name}"`, code: ErrorCodes.ROLE_ALREADY_EXISTS });
+    }
+
+    const role = this.repo.create({
+      name: data.name,
+      description: data.description ?? null,
+      is_active: true,
+      is_default: data.is_default ?? false,
+      system
+    });
+
+    return this.repo.save(role);
+  }
+
+  async update(id: string, system: SystemType, data: { name?: string; description?: string; is_active?: boolean; is_default?: boolean }) {
+    const role = await this.repo.findOne({
+      where: { id, system }
+    });
+
+    if (!role) {
+      throw new NotFoundException({ message: "Rol no encontrado", code: ErrorCodes.ROLE_NOT_FOUND });
+    }
+
+    if (data.name !== undefined && data.name !== role.name) {
+      const existing = await this.repo.findOne({
+        where: { name: data.name, system }
+      });
+
+      if (existing && existing.id !== id) {
+        throw new ConflictException({ message: `Ya existe un rol con el nombre "${data.name}"`, code: ErrorCodes.ROLE_ALREADY_EXISTS });
+      }
+      role.name = data.name;
+    }
+
+    if (data.description !== undefined) role.description = data.description;
+    if (data.is_active !== undefined) role.is_active = data.is_active;
+    if (data.is_default !== undefined) role.is_default = data.is_default;
+    role.updated_at = new Date();
+
+    return this.repo.save(role);
+  }
+
+  async delete(id: string, system: SystemType) {
+    const role = await this.repo.findOne({
+      where: { id, system },
+      relations: ["user_roles"]
+    });
+
+    if (!role) {
+      throw new NotFoundException({ message: "Rol no encontrado", code: ErrorCodes.ROLE_NOT_FOUND });
+    }
+
+    if (role.user_roles && role.user_roles.length > 0) {
+      throw new ConflictException({
+        message: `No se puede eliminar el rol "${role.name}" porque tiene ${role.user_roles.length} usuario(s) asignado(s)`,
+        code: ErrorCodes.ROLE_HAS_USERS
+      });
+    }
+
+    await this.repo.remove(role);
+
+    return {
+      id,
+      name: role.name,
+      deletedAt: new Date()
+    };
+  }
 }
+

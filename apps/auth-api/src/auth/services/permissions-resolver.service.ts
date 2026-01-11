@@ -13,13 +13,13 @@ export class PermissionsResolverService {
         @InjectRepository(UserRole) private urRepo: Repository<UserRole>
     ) { }
 
-    async userHasPermission(userId: string, modulePath: string, actionName: string): Promise<boolean> {
+    async userHasPermission(userId: string, modulePath: string, actionCode: string): Promise<boolean> {
         const rows = await this.urRepo
             .createQueryBuilder("ur")
             .innerJoin(RolePermission, "rp", "rp.role_id = ur.role_id AND rp.allowed = true")
             .innerJoin(Permission, "p", "p.id = rp.permission_id")
             .innerJoin(ModuleEntity, "m", "m.id = p.module_id AND m.path = :modulePath", { modulePath })
-            .innerJoin(ActionEntity, "a", "a.id = p.action_id AND a.name = :actionName", { actionName })
+            .innerJoin(ActionEntity, "a", "a.id = p.action_id AND a.code_action = :actionCode", { actionCode })
             .where("ur.user_id = :userId", { userId })
             .limit(1)
             .getRawMany();

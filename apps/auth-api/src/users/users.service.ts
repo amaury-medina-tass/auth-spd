@@ -5,6 +5,7 @@ import { User } from "@common/entities/user.entity";
 import { UserRole } from "@common/entities/user-role.entity";
 import { Role } from "@common/entities/role.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
+import { SystemType } from "@common/types/system";
 
 @Injectable()
 export class UsersService {
@@ -19,7 +20,7 @@ export class UsersService {
   async findAllPaginated(
     page: number = 1,
     limit: number = 10,
-    system: string,
+    system: SystemType,
     search?: string,
     sortBy?: string,
     sortOrder?: "ASC" | "DESC"
@@ -75,7 +76,7 @@ export class UsersService {
     };
   }
 
-  async findOne(id: string, system: string) {
+  async findOne(id: string, system: SystemType) {
     const user = await this.repo
       .createQueryBuilder("user")
       .innerJoin("user.user_roles", "ur")
@@ -96,7 +97,7 @@ export class UsersService {
     };
   }
 
-  async assignRole(userId: string, roleId: string, system: string) {
+  async assignRole(userId: string, roleId: string, system: SystemType) {
     const userInSystem = await this.repo
       .createQueryBuilder("user")
       .innerJoin("user.user_roles", "ur")
@@ -108,7 +109,7 @@ export class UsersService {
       throw new NotFoundException({ message: "Usuario no encontrado en este sistema", code: ErrorCodes.USER_NOT_FOUND });
     }
 
-    const role = await this.roleRepo.findOne({ where: { id: roleId, system: system as any } });
+    const role = await this.roleRepo.findOne({ where: { id: roleId, system } });
     if (!role) {
       throw new NotFoundException({ message: "Rol no encontrado en este sistema", code: ErrorCodes.ROLE_NOT_FOUND });
     }
@@ -135,7 +136,7 @@ export class UsersService {
     };
   }
 
-  async unassignRole(userId: string, roleId: string, system: string) {
+  async unassignRole(userId: string, roleId: string, system: SystemType) {
     const userInSystem = await this.repo
       .createQueryBuilder("user")
       .innerJoin("user.user_roles", "ur")
@@ -147,7 +148,7 @@ export class UsersService {
       throw new NotFoundException({ message: "Usuario no encontrado en este sistema", code: ErrorCodes.USER_NOT_FOUND });
     }
 
-    const role = await this.roleRepo.findOne({ where: { id: roleId, system: system as any } });
+    const role = await this.roleRepo.findOne({ where: { id: roleId, system } });
     if (!role) {
       throw new NotFoundException({ message: "Rol no encontrado en este sistema", code: ErrorCodes.ROLE_NOT_FOUND });
     }
@@ -169,7 +170,7 @@ export class UsersService {
     };
   }
 
-  async update(id: string, system: string, data: { email?: string; document_number?: string; first_name?: string; last_name?: string; is_active?: boolean }) {
+  async update(id: string, system: SystemType, data: { email?: string; document_number?: string; first_name?: string; last_name?: string; is_active?: boolean }) {
     const user = await this.repo
       .createQueryBuilder("user")
       .innerJoin("user.user_roles", "ur")
@@ -209,7 +210,7 @@ export class UsersService {
     return result;
   }
 
-  async delete(id: string, system: string) {
+  async delete(id: string, system: SystemType) {
     const user = await this.repo
       .createQueryBuilder("user")
       .innerJoin("user.user_roles", "ur")

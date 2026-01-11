@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Post, Req, Res, UseGuards } from "@nestjs/common";
 import type { Request, Response } from "express";
+import type { SystemType } from "@common/types/system";
 import { ConfigService } from "@nestjs/config";
 import { AuthService } from "./auth.service";
 import { PasswordService } from "./services/password.service";
 import { VerificationService } from "./services/verification.service";
+import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { RegisterDto } from "./dto/register.dto";
 import { VerifyEmailDto } from "./dto/verify-email.dto";
 import { ResendVerificationDto } from "./dto/resend-verification.dto";
@@ -63,8 +65,8 @@ export class AuthController {
   @Post("change-password")
   @UseGuards(JwtAuthGuard)
   @ResponseMessage("Contraseña actualizada correctamente")
-  async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
-    return this.passwordService.changePassword(req.user.sub, dto.currentPassword, dto.newPassword);
+  async changePassword(@CurrentUser("sub") userId: string, @Body() dto: ChangePasswordDto) {
+    return this.passwordService.changePassword(userId, dto.currentPassword, dto.newPassword);
   }
 
   @Post("forgot-password")
@@ -102,9 +104,9 @@ export class AuthController {
   @Post("logout")
   @UseGuards(JwtAuthGuard)
   @ResponseMessage("Sesión cerrada correctamente")
-  async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+  async logout(@CurrentUser("sub") userId: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const rt = req.cookies?.["refresh_token"];
-    await this.auth.logout(req.user.sub, rt);
+    await this.auth.logout(userId, rt);
     clearAuthCookies(res, this.cookieOpts());
     return null;
   }
@@ -112,7 +114,7 @@ export class AuthController {
   @Get("me")
   @UseGuards(JwtAuthGuard)
   @ResponseMessage("Perfil de usuario obtenido")
-  async me(@Req() req: any) {
-    return this.auth.me(req.user.sub);
+  async me(@CurrentUser("sub") userId: string, @CurrentUser("system") system: SystemType) {
+    return this.auth.me(userId, system);
   }
 }

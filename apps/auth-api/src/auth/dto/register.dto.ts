@@ -1,4 +1,6 @@
 import { IsEmail, IsIn, IsString, MinLength } from "class-validator";
+import type { SystemType } from "@common/types/system";
+import { SYSTEMS } from "@common/types/system";
 
 export class RegisterDto {
   @IsEmail({}, { message: "El correo electrónico no es válido" })
@@ -21,6 +23,6 @@ export class RegisterDto {
   password!: string;
 
   @IsString({ message: "El sistema es requerido" })
-  @IsIn(["DAGRD", "SICGEM"], { message: "Sistema inválido" })
-  system!: string;
+  @IsIn(SYSTEMS, { message: "Sistema inválido" })
+  system!: SystemType;
 }

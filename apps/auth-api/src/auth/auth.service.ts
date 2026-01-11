@@ -10,16 +10,22 @@ import { ActionEntity } from "@common/entities/action.entity";
 import { ModuleEntity } from "@common/entities/module.entity";
 import { hashPassword, verifyPassword } from "@common/security/password";
 import { ErrorCodes } from "@common/errors/error-codes";
+import { SystemType } from "@common/types/system";
 import { OutboxService } from "../outbox/outbox.service";
 import { TokenService, PermissionsPayload } from "./services/token.service";
 import { VerificationService } from "./services/verification.service";
 
-type ActionPermissions = { [actionName: string]: boolean };
+type ActionPermissions = { [actionCode: string]: { name: string; allowed: boolean } };
 
 interface UserPermissionRow {
   module_path: string;
   module_name: string;
-  action_name: string;
+  action_code: string;
+}
+
+interface ActionInfo {
+  code: string;
+  name: string;
 }
 
 @Injectable()
@@ -43,44 +49,73 @@ export class AuthService {
     return userRolesData.map((ur) => ur.role.name);
   }
 
-  private async getUserPermissions(userId: string): Promise<PermissionsPayload> {
-    const allActions = await this.dataSource
-      .getRepository(ActionEntity)
-      .find({ select: ["name"] });
-    const actionNames = allActions.map((a) => a.name);
-
-    const allModules = await this.dataSource
+  private async getUserPermissions(userId: string, system: SystemType): Promise<PermissionsPayload> {
+    // Get modules filtered by system
+    const systemModules = await this.dataSource
       .getRepository(ModuleEntity)
-      .find({ select: ["name", "path"] });
+      .find({
+        select: ["id", "name", "path"],
+        where: { system }
+      });
 
+    // Get which actions exist for each module in the permissions table (with names)
+    const moduleActionsQuery = await this.dataSource.query<{ module_id: string; action_code: string; action_name: string }[]>(
+      `
+      SELECT DISTINCT p.module_id, a.code_action AS action_code, a.name AS action_name
+      FROM permissions p
+      JOIN actions a ON a.id = p.action_id
+      JOIN modules m ON m.id = p.module_id
+      WHERE m.system = $1::modules_system_enum
+        AND (a.system = 'PUBLIC' OR a.system = $2::actions_system_enum)
+      `,
+      [system, system]
+    );
+
+    // Build a map of module_id -> available actions with their names
+    const moduleActionsMap = new Map<string, Map<string, string>>();
+    for (const row of moduleActionsQuery) {
+      if (!moduleActionsMap.has(row.module_id)) {
+        moduleActionsMap.set(row.module_id, new Map());
+      }
+      moduleActionsMap.get(row.module_id)!.set(row.action_code, row.action_name);
+    }
+
+    // Get user's granted permissions
     const userPermissions = await this.dataSource.query<UserPermissionRow[]>(
       `
       SELECT
         m.path AS module_path,
         m.name AS module_name,
-        a.name AS action_name
+        a.code_action AS action_code
       FROM users u
       JOIN user_roles ur ON ur.user_id = u.id
-      JOIN roles r ON r.id = ur.role_id AND r.is_active = TRUE
+      JOIN roles r ON r.id = ur.role_id AND r.is_active = TRUE AND r.system = $2::roles_system_enum
       JOIN role_permissions rp ON rp.role_id = r.id AND rp.allowed = TRUE
       JOIN permissions p ON p.id = rp.permission_id
-      JOIN modules m ON m.id = p.module_id
-      JOIN actions a ON a.id = p.action_id
+      JOIN modules m ON m.id = p.module_id AND m.system = $3::modules_system_enum
+      JOIN actions a ON a.id = p.action_id AND (a.system = 'PUBLIC' OR a.system = $4::actions_system_enum)
       WHERE u.id = $1 AND u.is_active = TRUE
       `,
-      [userId]
+      [userId, system, system, system]
     );
 
     const permissionSet = new Set(
-      userPermissions.map((p) => `${p.module_path}:${p.action_name}`)
+      userPermissions.map((p) => `${p.module_path}:${p.action_code}`)
     );
 
     const permissions: PermissionsPayload = {};
-    for (const mod of allModules) {
+    for (const mod of systemModules) {
+      const availableActions = moduleActionsMap.get(mod.id) || new Map<string, string>();
       const actions: ActionPermissions = {};
-      for (const action of actionNames) {
-        actions[action] = permissionSet.has(`${mod.path}:${action}`);
+
+      // Only include actions that exist in permissions table for this module
+      for (const [actionCode, actionName] of availableActions) {
+        actions[actionCode] = {
+          name: actionName,
+          allowed: permissionSet.has(`${mod.path}:${actionCode}`)
+        };
       }
+
       permissions[mod.path] = {
         name: mod.name,
         actions
@@ -96,7 +131,7 @@ export class AuthService {
     document_number: string,
     first_name: string,
     last_name: string,
-    system: string,
+    system: SystemType,
     requestId: string
   ) {
     const existingByEmail = await this.users.findOne({ where: { email } });
@@ -110,7 +145,7 @@ export class AuthService {
 
     if (existingUser) {
       const hasRoleInSystem = await this.userRoles.findOne({
-        where: { user_id: existingUser.id, role: { system: system as any } },
+        where: { user_id: existingUser.id, role: { system } },
         relations: ['role']
       });
 
@@ -146,8 +181,8 @@ export class AuthService {
     return { user: saved, isNewUser: true };
   }
 
-  private async assignDefaultRole(userId: string, system: string) {
-    const role = await this.roles.findOne({ where: { is_default: true, system: system as any } });
+  private async assignDefaultRole(userId: string, system: SystemType) {
+    const role = await this.roles.findOne({ where: { is_default: true, system } });
 
     if (!role) {
       throw new BadRequestException({ message: `No se encontró un rol por defecto para el sistema ${system}`, code: ErrorCodes.DEFAULT_ROLE_NOT_FOUND });
@@ -159,7 +194,7 @@ export class AuthService {
     });
   }
 
-  async login(email: string, password: string, system: string) {
+  async login(email: string, password: string, system: SystemType) {
     const user = await this.users.findOne({ where: { email } });
     if (!user) throw new UnauthorizedException({ message: "Credenciales inválidas", code: ErrorCodes.INVALID_CREDENTIALS });
 
@@ -168,7 +203,7 @@ export class AuthService {
     if (!user.email_verified) throw new UnauthorizedException({ message: "Email no verificado", code: ErrorCodes.EMAIL_NOT_VERIFIED, email: user.email });
 
     const hasRoleInSystem = await this.userRoles.findOne({
-      where: { user_id: user.id, role: { system: system as any } },
+      where: { user_id: user.id, role: { system } },
       relations: ['role']
     });
 
@@ -178,7 +213,7 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException({ message: "Credenciales inválidas", code: ErrorCodes.INVALID_CREDENTIALS });
 
     const [permissions, roles] = await Promise.all([
-      this.getUserPermissions(user.id),
+      this.getUserPermissions(user.id, system),
       this.getUserRoles(user.id)
     ]);
 
@@ -190,18 +225,19 @@ export class AuthService {
     return { user, accessToken, refreshToken };
   }
 
-  async me(userId: string) {
+  async me(userId: string, system: SystemType) {
     const user = await this.users.findOne({ where: { id: userId } });
     if (!user) throw new UnauthorizedException({ message: "Usuario no encontrado", code: ErrorCodes.USER_NOT_FOUND });
 
     const [permissions, roles] = await Promise.all([
-      this.getUserPermissions(userId),
+      this.getUserPermissions(userId, system),
       this.getUserRoles(userId)
     ]);
 
     return {
       id: user.id,
       email: user.email,
+      document_number: user.document_number,
       first_name: user.first_name,
       last_name: user.last_name,
       is_active: user.is_active,
@@ -231,12 +267,13 @@ export class AuthService {
 
     await this.refreshTokens.update({ id: validRow.id }, { revoked: true, updated_at: new Date() });
 
+    const system = decoded.system as SystemType;
+
     const [permissions, roles] = await Promise.all([
-      this.getUserPermissions(user.id),
+      this.getUserPermissions(user.id, system),
       this.getUserRoles(user.id)
     ]);
 
-    const system = decoded.system as string;
     const newAccess = await this.tokenService.signAccessToken(user, roles, permissions, system);
     const newRefresh = await this.tokenService.signRefreshToken(user, system);
     await this.tokenService.storeRefreshToken(userId, newRefresh);
