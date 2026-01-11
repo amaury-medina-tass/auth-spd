@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Query, UseGuards } from "@nestjs/common";
 import type { SystemType } from "@common/types/system";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../common/guards/permissions.guard";
@@ -6,7 +6,6 @@ import { RequirePermission } from "../common/decorators/require-permission.decor
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { UsersService } from "./users.service";
 import { ResponseMessage } from "../common/decorators/response-message.decorator";
-import { AssignRoleDto } from "./dto/assign-role.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 
 @Controller("users")
@@ -40,20 +39,6 @@ export class UsersController {
   @ResponseMessage("Usuario actualizado")
   update(@CurrentUser("system") system: SystemType, @Param("id") id: string, @Body() dto: UpdateUserDto) {
     return this.svc.update(id, system, dto);
-  }
-
-  @Post("assign-role")
-  @RequirePermission("/access-control/users", "ASSIGN_ROLE")
-  @ResponseMessage("Rol asignado exitosamente")
-  assignRole(@CurrentUser("system") system: SystemType, @Body() dto: AssignRoleDto) {
-    return this.svc.assignRole(dto.userId, dto.roleId, system);
-  }
-
-  @Delete("unassign-role")
-  @RequirePermission("/access-control/users", "ASSIGN_ROLE")
-  @ResponseMessage("Rol desasignado exitosamente")
-  unassignRole(@CurrentUser("system") system: SystemType, @Body() dto: AssignRoleDto) {
-    return this.svc.unassignRole(dto.userId, dto.roleId, system);
   }
 
   @Delete(":id")

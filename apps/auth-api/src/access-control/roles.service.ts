@@ -75,7 +75,77 @@ export class RolesService {
       throw new NotFoundException({ message: "Rol no encontrado", code: ErrorCodes.ROLE_NOT_FOUND });
     }
 
-    return role;
+    // Get ALL available actions for each module (from permissions table)
+    const allModuleActions = await this.repo.manager.query<{
+      module_id: string;
+      module_path: string;
+      module_name: string;
+      action_id: string;
+      action_code: string;
+      action_name: string;
+    }[]>(
+      `
+      SELECT DISTINCT 
+        m.id AS module_id,
+        m.path AS module_path,
+        m.name AS module_name,
+        a.id AS action_id,
+        a.code_action AS action_code,
+        a.name AS action_name
+      FROM permissions p
+      JOIN modules m ON m.id = p.module_id AND m.system = $1::modules_system_enum
+      JOIN actions a ON a.id = p.action_id AND (a.system = 'PUBLIC' OR a.system = $2::actions_system_enum)
+      ORDER BY m.path, a.code_action
+      `,
+      [system, system]
+    );
+
+    // Get role's granted permissions
+    const grantedPermissions = await this.repo.manager.query<{
+      module_path: string;
+      action_code: string;
+      allowed: boolean;
+    }[]>(
+      `
+      SELECT 
+        m.path AS module_path,
+        a.code_action AS action_code,
+        rp.allowed
+      FROM role_permissions rp
+      JOIN permissions p ON p.id = rp.permission_id
+      JOIN modules m ON m.id = p.module_id
+      JOIN actions a ON a.id = p.action_id
+      WHERE rp.role_id = $1
+      `,
+      [id]
+    );
+
+    // Build a set of granted permissions
+    const grantedSet = new Map<string, boolean>();
+    for (const gp of grantedPermissions) {
+      grantedSet.set(`${gp.module_path}:${gp.action_code}`, gp.allowed);
+    }
+
+    // Group all actions by module, marking allowed status
+    const permissionsByModule: Record<string, { moduleId: string; moduleName: string; actions: { id: string; code: string; name: string; allowed: boolean }[] }> = {};
+
+    for (const action of allModuleActions) {
+      if (!permissionsByModule[action.module_path]) {
+        permissionsByModule[action.module_path] = { moduleId: action.module_id, moduleName: action.module_name, actions: [] };
+      }
+      const key = `${action.module_path}:${action.action_code}`;
+      permissionsByModule[action.module_path].actions.push({
+        id: action.action_id,
+        code: action.action_code,
+        name: action.action_name,
+        allowed: grantedSet.get(key) ?? false
+      });
+    }
+
+    return {
+      ...role,
+      permissions: permissionsByModule
+    };
   }
 
   async create(data: { name: string; description?: string; is_default?: boolean }, system: SystemType) {
