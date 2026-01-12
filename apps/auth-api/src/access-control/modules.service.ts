@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, ILike } from "typeorm";
 import { ModuleEntity } from "@common/entities/module.entity";
@@ -18,11 +18,12 @@ export class ModulesService {
   private readonly sortableFields = ["name", "path", "created_at"];
 
   async findAll(system: SystemType) {
-    return this.repo.find({
-      where: { system },
-      select: ["id", "name", "path"],
-      order: { path: "ASC" }
-    });
+    return this.repo
+      .createQueryBuilder("module")
+      .select(["module.id", "module.name", "module.path"])
+      .where("module.system = 'PUBLIC' OR module.system = :system", { system })
+      .orderBy("module.path", "ASC")
+      .getMany();
   }
 
   async findAllPaginated(
@@ -35,24 +36,21 @@ export class ModulesService {
   ) {
     const skip = (page - 1) * limit;
 
-    let whereCondition: any = { system };
+    const qb = this.repo.createQueryBuilder("module")
+      .where("(module.system = 'PUBLIC' OR module.system = :system)", { system });
 
     if (search) {
-      whereCondition = [
-        { name: ILike(`%${search}%`), system },
-        { path: ILike(`%${search}%`), system }
-      ];
+      qb.andWhere("(module.name ILIKE :search OR module.path ILIKE :search)", { search: `%${search}%` });
     }
 
     const validSortBy = sortBy && this.sortableFields.includes(sortBy) ? sortBy : "created_at";
     const validSortOrder = sortOrder === "ASC" || sortOrder === "DESC" ? sortOrder : "DESC";
 
-    const [data, total] = await this.repo.findAndCount({
-      where: whereCondition,
-      skip,
-      take: limit,
-      order: { [validSortBy]: validSortOrder }
-    });
+    qb.orderBy(`module.${validSortBy}`, validSortOrder)
+      .skip(skip)
+      .take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 
@@ -77,7 +75,11 @@ export class ModulesService {
   }
 
   async findOne(id: string, system: SystemType) {
-    const module = await this.repo.findOne({ where: { id, system } });
+    const module = await this.repo
+      .createQueryBuilder("module")
+      .where("module.id = :id", { id })
+      .andWhere("(module.system = 'PUBLIC' OR module.system = :system)", { system })
+      .getOne();
 
     if (!module) {
       throw new NotFoundException({ message: "Módulo no encontrado", code: ErrorCodes.MODULE_NOT_FOUND });
@@ -102,8 +104,21 @@ export class ModulesService {
     return this.repo.save(module);
   }
 
-  async update(id: string, system: SystemType, data: { name?: string; description?: string }) {
+  async update(id: string, system: SystemType, data: { name?: string; description?: string; path?: string }) {
     const module = await this.findOne(id, system);
+
+    if (module.system === "PUBLIC") {
+      throw new ForbiddenException({ message: "No se puede modificar un módulo PUBLIC", code: ErrorCodes.MODULE_PUBLIC_CANNOT_MODIFY });
+    }
+
+    if (data.path !== undefined && data.path !== module.path) {
+      // Check if new path already exists
+      const existingByPath = await this.repo.findOne({ where: { path: data.path, system: module.system } });
+      if (existingByPath && existingByPath.id !== id) {
+        throw new ConflictException({ message: "Ya existe un módulo con ese path", code: ErrorCodes.MODULE_ALREADY_EXISTS });
+      }
+      module.path = data.path;
+    }
 
     if (data.name !== undefined) module.name = data.name;
     if (data.description !== undefined) module.description = data.description;
@@ -114,6 +129,10 @@ export class ModulesService {
 
   async delete(id: string, system: SystemType) {
     const module = await this.findOne(id, system);
+
+    if (module.system === "PUBLIC") {
+      throw new ForbiddenException({ message: "No se puede eliminar un módulo PUBLIC", code: ErrorCodes.MODULE_PUBLIC_CANNOT_DELETE });
+    }
 
     await this.repo.remove(module);
 
@@ -163,6 +182,72 @@ export class ModulesService {
       description: module.description,
       actions: assignedActions,
       missingActions
+    };
+  }
+
+  async addActionToModule(moduleId: string, actionId: string, system: SystemType) {
+    const module = await this.findOne(moduleId, system);
+
+    // Verify the action exists and belongs to PUBLIC or the same system
+    const action = await this.actionRepo
+      .createQueryBuilder("action")
+      .where("action.id = :actionId", { actionId })
+      .andWhere("(action.system = 'PUBLIC' OR action.system = :system)", { system })
+      .getOne();
+
+    if (!action) {
+      throw new NotFoundException({ message: "Acción no encontrada", code: ErrorCodes.ACTION_NOT_FOUND });
+    }
+
+    // Check if permission already exists
+    const existingPermission = await this.permissionRepo.findOne({
+      where: { module: { id: moduleId }, action: { id: actionId } }
+    });
+
+    if (existingPermission) {
+      throw new ConflictException({ message: "Esta acción ya está asignada al módulo", code: ErrorCodes.PERMISSION_ALREADY_EXISTS });
+    }
+
+    const permission = this.permissionRepo.create({
+      module: { id: moduleId } as ModuleEntity,
+      action: { id: actionId } as ActionEntity
+    });
+
+    const savedPermission = await this.permissionRepo.save(permission);
+
+    return {
+      permissionId: savedPermission.id,
+      module: {
+        id: module.id,
+        name: module.name,
+        path: module.path
+      },
+      action: {
+        id: action.id,
+        code: action.code_action,
+        name: action.name
+      }
+    };
+  }
+
+  async removeActionFromModule(moduleId: string, actionId: string, system: SystemType) {
+    await this.findOne(moduleId, system);
+
+    const permission = await this.permissionRepo.findOne({
+      where: { module: { id: moduleId }, action: { id: actionId } },
+      relations: ["action"]
+    });
+
+    if (!permission) {
+      throw new NotFoundException({ message: "Permiso no encontrado", code: ErrorCodes.PERMISSION_NOT_FOUND });
+    }
+
+    await this.permissionRepo.remove(permission);
+
+    return {
+      moduleId,
+      actionId,
+      deletedAt: new Date()
     };
   }
 }

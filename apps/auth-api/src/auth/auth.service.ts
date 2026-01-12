@@ -202,12 +202,12 @@ export class AuthService {
 
     if (!user.email_verified) throw new UnauthorizedException({ message: "Email no verificado", code: ErrorCodes.EMAIL_NOT_VERIFIED, email: user.email });
 
-    const hasRoleInSystem = await this.userRoles.findOne({
-      where: { user_id: user.id, role: { system } },
+    const hasActiveRoleInSystem = await this.userRoles.findOne({
+      where: { user_id: user.id, role: { system, is_active: true } },
       relations: ['role']
     });
 
-    if (!hasRoleInSystem) throw new UnauthorizedException({ message: `Usuario no registrado en el sistema ${system}`, code: ErrorCodes.NOT_REGISTERED_IN_SYSTEM });
+    if (!hasActiveRoleInSystem) throw new UnauthorizedException({ message: `Usuario no tiene un rol activo en el sistema ${system}`, code: ErrorCodes.NOT_REGISTERED_IN_SYSTEM });
 
     const ok = await verifyPassword(password, user.password_hash);
     if (!ok) throw new UnauthorizedException({ message: "Credenciales inválidas", code: ErrorCodes.INVALID_CREDENTIALS });

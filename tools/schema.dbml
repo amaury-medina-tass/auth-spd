@@ -1,62 +1,120 @@
 // ===============================
+// ENUM: SYSTEM_TYPE
+// Sistemas disponibles
+// ===============================
+// PUBLIC, DAGRD, SICGEM
+
+// ===============================
 // ACTIONS
 // Acciones posibles sobre un módulo
-// Ej: READ, CREATE, UPDATE, DELETE
+// Ej: READ, CREATE, UPDATE, DELETE, ASSIGN_ROLE
 // ===============================
 Table actions {
   id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador único de la acción"]
-  name varchar(50) [unique, not null, note: "Nombre de la acción. Ej: READ, CREATE, UPDATE, DELETE"]
+  code_action varchar(50) [not null, note: "Código de la acción. Ej: READ, CREATE, UPDATE, DELETE, ASSIGN_ROLE"]
+  name varchar(100) [not null, note: "Nombre legible de la acción. Ej: Leer, Crear, Actualizar"]
   description text [note: "Descripción funcional de la acción"]
+  system actions_system_enum [default: 'PUBLIC', not null, note: "Sistema al que pertenece: PUBLIC, DAGRD, SICGEM"]
   created_at timestamp [default: `now()`, not null, note: "Fecha de creación del registro"]
   updated_at timestamp [default: `now()`, not null, note: "Fecha de última actualización"]
+
+  indexes {
+    (code_action, system) [unique, note: "Un código de acción único por sistema"]
+  }
 }
 
 // ===============================
 // MODULES
 // Módulos funcionales del sistema
-// Ej: MASTERS, DAGRD, FINANCIERO
+// Ej: /access-control/users, /access-control/roles
 // ===============================
 Table modules {
   id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador único del módulo"]
-  name varchar(200) [unique, not null, note: "Nombre del módulo. Ej: Masters, DAGRD"]
+  name varchar(200) [unique, not null, note: "Nombre del módulo. Ej: Usuarios, Roles"]
   description text [note: "Descripción funcional del módulo"]
-  path varchar(200) [unique, not null, note: "Ruta base en frontend/backend. Ej: /masters, /dagrd"]
+  path varchar(200) [unique, not null, note: "Ruta base. Ej: /access-control/users"]
+  system modules_system_enum [default: 'PUBLIC', not null, note: "Sistema al que pertenece: PUBLIC, DAGRD, SICGEM"]
   created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
   updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
 // ===============================
-// OUTBOX_MESSAGES
-// Implementación del patrón Outbox
-// Para publicar eventos de forma segura
+// ROLES
+// Roles del sistema
+// Ej: Administrador, Usuario
 // ===============================
-Table outbox_messages {
-  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del mensaje"]
-  name varchar(200) [not null, note: "Nombre del evento. Ej: USER_CREATED, ROLE_UPDATED"]
-  payload jsonb [not null, note: "Contenido del evento en formato JSON"]
-  occurred_at timestamp [default: `now()`, not null, note: "Momento en que ocurrió el evento"]
-  processed_at timestamp [note: "Momento en que el evento fue procesado"]
-  attempts int [default: 0, not null, note: "Número de intentos de procesamiento"]
-  last_error text [note: "Último error ocurrido al procesar el evento"]
-  created_at timestamp [default: `now()`, not null, note: "Fecha de creación del registro"]
+Table roles {
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del rol"]
+  name varchar(200) [not null, note: "Nombre del rol. Ej: Administrador, Usuario"]
+  description text [note: "Descripción del rol y su propósito"]
+  is_active boolean [default: true, not null, note: "Indica si el rol está activo"]
+  is_default boolean [default: false, not null, note: "Indica si es el rol por defecto del sistema"]
+  system roles_system_enum [not null, note: "Sistema al que pertenece: PUBLIC, DAGRD, SICGEM"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
+
+  indexes {
+    (name, system) [unique, note: "Un nombre de rol único por sistema"]
+  }
+}
+
+// ===============================
+// USERS
+// Usuarios del sistema
+// ===============================
+Table users {
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del usuario"]
+  email varchar(255) [unique, not null, note: "Correo electrónico. Ej: usuario@dominio.com"]
+  document_number varchar(50) [not null, note: "Número de documento del usuario"]
+  first_name varchar(100) [not null, note: "Primer nombre"]
+  last_name varchar(100) [not null, note: "Apellido"]
+  password_hash text [not null, note: "Hash de la contraseña"]
+  is_active boolean [default: true, not null, note: "Estado del usuario"]
+  email_verified boolean [default: false, not null, note: "Indica si el email fue verificado"]
+  verification_code varchar(6) [note: "Código de verificación de email (6 dígitos)"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
+}
+
+// ===============================
+// USER_ROLES
+// Relación Usuario ↔ Rol
+// ===============================
+Table user_roles {
+  user_id uuid [pk, note: "Usuario al que se asigna el rol"]
+  role_id uuid [pk, note: "Rol asignado al usuario"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de asignación"]
   updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
 // ===============================
 // PERMISSIONS
 // Permisos atómicos (módulo + acción)
-// Ej: MASTERS + READ
+// Define qué acciones se pueden hacer en qué módulos
 // ===============================
 Table permissions {
   id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador único del permiso"]
-  module_id uuid [not null, note: "Referencia al módulo. Ej: MASTERS"]
-  action_id uuid [not null, note: "Referencia a la acción. Ej: READ"]
+  module_id uuid [not null, note: "Referencia al módulo"]
+  action_id uuid [not null, note: "Referencia a la acción"]
   created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
   updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 
   indexes {
     (module_id, action_id) [unique, note: "Un permiso por combinación módulo + acción"]
   }
+}
+
+// ===============================
+// ROLE_PERMISSIONS
+// Relación Rol ↔ Permiso
+// Define qué puede hacer cada rol
+// ===============================
+Table role_permissions {
+  role_id uuid [pk, note: "Rol asignado"]
+  permission_id uuid [pk, note: "Permiso asignado"]
+  allowed boolean [default: true, not null, note: "Indica si el permiso está habilitado"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
 // ===============================
@@ -74,67 +132,37 @@ Table refresh_tokens {
 }
 
 // ===============================
-// ROLE_PERMISSIONS
-// Relación Rol ↔ Permiso
-// Define qué puede hacer cada rol
+// OUTBOX_MESSAGES
+// Implementación del patrón Outbox
+// Para publicar eventos de forma segura
 // ===============================
-Table role_permissions {
-  role_id uuid [pk, note: "Rol asignado"]
-  permission_id uuid [pk, note: "Permiso asignado"]
-  allowed boolean [default: true, not null, note: "Indica si el permiso está habilitado"]
-  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
-  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
-}
-
-// ===============================
-// ROLES
-// Roles del sistema
-// Ej: ADMIN, ANALISTA, USUARIO
-// ===============================
-Table roles {
-  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del rol"]
-  name varchar(200) [unique, not null, note: "Nombre del rol. Ej: ADMIN, SPD_USER"]
-  description text [note: "Descripción del rol y su propósito"]
-  is_active boolean [default: true, not null, note: "Indica si el rol está activo"]
-  is_default boolean [default: false, not null, note: "Indica si es el rol por defecto"]
-  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
-  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
-}
-
-// ===============================
-// USER_ROLES
-// Relación Usuario ↔ Rol
-// ===============================
-Table user_roles {
-  user_id uuid [pk, note: "Usuario al que se asigna el rol"]
-  role_id uuid [pk, note: "Rol asignado al usuario"]
-  created_at timestamp [default: `now()`, not null, note: "Fecha de asignación"]
-  updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
-}
-
-// ===============================
-// USERS
-// Usuarios del sistema
-// ===============================
-Table users {
-  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del usuario"]
-  email varchar(255) [unique, not null, note: "Correo electrónico. Ej: usuario@dominio.com"]
-  document_number varchar(50) [not null, note: "Número de documento del usuario"]
-  first_name varchar(100) [not null, note: "Primer nombre"]
-  last_name varchar(100) [not null, note: "Apellido"]
-  password_hash text [not null, note: "Hash de la contraseña"]
-  is_active boolean [default: true, not null, note: "Estado del usuario"]
-  created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
+Table outbox_messages {
+  id uuid [pk, default: `uuid_generate_v4()`, note: "Identificador del mensaje"]
+  name varchar(200) [not null, note: "Nombre del evento. Ej: Auth.UserCreated"]
+  payload jsonb [not null, note: "Contenido del evento en formato JSON"]
+  occurred_at timestamp [default: `now()`, not null, note: "Momento en que ocurrió el evento"]
+  processed_at timestamp [note: "Momento en que el evento fue procesado"]
+  attempts int [default: 0, not null, note: "Número de intentos de procesamiento"]
+  last_error text [note: "Último error ocurrido al procesar el evento"]
+  created_at timestamp [default: `now()`, not null, note: "Fecha de creación del registro"]
   updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
 
 // ===============================
 // RELACIONES
 // ===============================
-Ref: permissions.module_id > modules.id [delete: cascade]
-Ref: permissions.action_id > actions.id [delete: cascade]
-Ref: refresh_tokens.user_id > users.id [delete: cascade]
-Ref: role_permissions.role_id > roles.id [delete: cascade]
-Ref: role_permissions.permission_id > permissions.id [delete: cascade]
+
+// Users ↔ User Roles
 Ref: user_roles.user_id > users.id [delete: cascade]
 Ref: user_roles.role_id > roles.id [delete: cascade]
+
+// Roles ↔ Role Permissions
+Ref: role_permissions.role_id > roles.id [delete: cascade]
+Ref: role_permissions.permission_id > permissions.id [delete: cascade]
+
+// Permissions ↔ Modules/Actions
+Ref: permissions.module_id > modules.id [delete: cascade]
+Ref: permissions.action_id > actions.id [delete: cascade]
+
+// Refresh Tokens ↔ Users
+Ref: refresh_tokens.user_id > users.id [delete: cascade]

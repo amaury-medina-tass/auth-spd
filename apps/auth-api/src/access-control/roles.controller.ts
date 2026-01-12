@@ -42,6 +42,24 @@ export class RolesController {
     return this.svc.findOne(id, system);
   }
 
+  @Get(":id/permissions")
+  @RequirePermission("/access-control/roles", "READ")
+  @ResponseMessage("Permisos del rol obtenidos")
+  getRolePermissions(@CurrentUser("system") system: SystemType, @Param("id") id: string) {
+    return this.svc.getRolePermissions(id, system);
+  }
+
+  @Patch(":id/permissions")
+  @RequirePermission("/access-control/roles", "UPDATE")
+  @ResponseMessage("Permisos del rol actualizados exitosamente")
+  updateRolePermissions(
+    @CurrentUser("system") system: SystemType,
+    @Param("id") id: string,
+    @Body() body: { permissionIds: string[] }
+  ) {
+    return this.svc.updateRolePermissions(id, system, body.permissionIds);
+  }
+
   @Post()
   @RequirePermission("/access-control/roles", "CREATE")
   @ResponseMessage("Rol creado exitosamente")

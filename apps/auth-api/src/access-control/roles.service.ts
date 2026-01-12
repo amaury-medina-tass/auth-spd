@@ -1,14 +1,18 @@
 import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike } from "typeorm";
+import { Repository, ILike, In } from "typeorm";
 import { Role } from "@common/entities/role.entity";
+import { RolePermission } from "@common/entities/role-permission.entity";
+import { Permission } from "@common/entities/permission.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
 
 @Injectable()
 export class RolesService {
   constructor(
-    @InjectRepository(Role) private repo: Repository<Role>
+    @InjectRepository(Role) private repo: Repository<Role>,
+    @InjectRepository(RolePermission) private rolePermissionRepo: Repository<RolePermission>,
+    @InjectRepository(Permission) private permissionRepo: Repository<Permission>
   ) { }
 
   private readonly sortableFields = ["name", "is_active", "created_at", "updated_at"];
@@ -75,11 +79,18 @@ export class RolesService {
       throw new NotFoundException({ message: "Rol no encontrado", code: ErrorCodes.ROLE_NOT_FOUND });
     }
 
-    // Get ALL available actions for each module (from permissions table)
+    return role;
+  }
+
+  async getRolePermissions(id: string, system: SystemType) {
+    const role = await this.findOne(id, system);
+
+    // Get ALL modules (PUBLIC + system-specific) with their permissions
     const allModuleActions = await this.repo.manager.query<{
       module_id: string;
       module_path: string;
       module_name: string;
+      permission_id: string;
       action_id: string;
       action_code: string;
       action_name: string;
@@ -89,11 +100,12 @@ export class RolesService {
         m.id AS module_id,
         m.path AS module_path,
         m.name AS module_name,
+        p.id AS permission_id,
         a.id AS action_id,
         a.code_action AS action_code,
         a.name AS action_name
       FROM permissions p
-      JOIN modules m ON m.id = p.module_id AND m.system = $1::modules_system_enum
+      JOIN modules m ON m.id = p.module_id AND (m.system = 'PUBLIC' OR m.system = $1::modules_system_enum)
       JOIN actions a ON a.id = p.action_id AND (a.system = 'PUBLIC' OR a.system = $2::actions_system_enum)
       ORDER BY m.path, a.code_action
       `,
@@ -102,14 +114,12 @@ export class RolesService {
 
     // Get role's granted permissions
     const grantedPermissions = await this.repo.manager.query<{
-      module_path: string;
-      action_code: string;
+      permission_id: string;
       allowed: boolean;
     }[]>(
       `
       SELECT 
-        m.path AS module_path,
-        a.code_action AS action_code,
+        rp.permission_id,
         rp.allowed
       FROM role_permissions rp
       JOIN permissions p ON p.id = rp.permission_id
@@ -120,30 +130,33 @@ export class RolesService {
       [id]
     );
 
-    // Build a set of granted permissions
+    // Build a set of granted permissions by permission_id
     const grantedSet = new Map<string, boolean>();
     for (const gp of grantedPermissions) {
-      grantedSet.set(`${gp.module_path}:${gp.action_code}`, gp.allowed);
+      grantedSet.set(gp.permission_id, gp.allowed);
     }
 
     // Group all actions by module, marking allowed status
-    const permissionsByModule: Record<string, { moduleId: string; moduleName: string; actions: { id: string; code: string; name: string; allowed: boolean }[] }> = {};
+    const permissionsByModule: Record<string, { moduleId: string; moduleName: string; actions: { permissionId: string; actionId: string; code: string; name: string; allowed: boolean }[] }> = {};
 
     for (const action of allModuleActions) {
       if (!permissionsByModule[action.module_path]) {
         permissionsByModule[action.module_path] = { moduleId: action.module_id, moduleName: action.module_name, actions: [] };
       }
-      const key = `${action.module_path}:${action.action_code}`;
       permissionsByModule[action.module_path].actions.push({
-        id: action.action_id,
+        permissionId: action.permission_id,
+        actionId: action.action_id,
         code: action.action_code,
         name: action.action_name,
-        allowed: grantedSet.get(key) ?? false
+        allowed: grantedSet.get(action.permission_id) ?? false
       });
     }
 
     return {
-      ...role,
+      role: {
+        id: role.id,
+        name: role.name
+      },
       permissions: permissionsByModule
     };
   }
@@ -155,6 +168,14 @@ export class RolesService {
 
     if (existing) {
       throw new ConflictException({ message: `Ya existe un rol con el nombre "${data.name}"`, code: ErrorCodes.ROLE_ALREADY_EXISTS });
+    }
+
+    // If setting as default, remove default from any other role in this system
+    if (data.is_default) {
+      await this.repo.update(
+        { system, is_default: true },
+        { is_default: false, updated_at: new Date() }
+      );
     }
 
     const role = this.repo.create({
@@ -188,6 +209,14 @@ export class RolesService {
       role.name = data.name;
     }
 
+    // If setting as default, remove default from any other role in this system
+    if (data.is_default === true && !role.is_default) {
+      await this.repo.update(
+        { system, is_default: true },
+        { is_default: false, updated_at: new Date() }
+      );
+    }
+
     if (data.description !== undefined) role.description = data.description;
     if (data.is_active !== undefined) role.is_active = data.is_active;
     if (data.is_default !== undefined) role.is_default = data.is_default;
@@ -219,6 +248,89 @@ export class RolesService {
       id,
       name: role.name,
       deletedAt: new Date()
+    };
+  }
+
+  async updateRolePermissions(
+    roleId: string,
+    system: SystemType,
+    allowedPermissionIds: string[]
+  ) {
+    const role = await this.findOne(roleId, system);
+
+    // If no permissions sent, just clear all permissions for this role
+    if (allowedPermissionIds.length === 0) {
+      await this.rolePermissionRepo.delete({ role_id: roleId });
+      return {
+        roleId: role.id,
+        roleName: role.name,
+        added: 0,
+        removed: 0,
+        total: 0
+      };
+    }
+
+    // Validate all permission IDs exist and belong to the correct system
+    const validPermissions = await this.permissionRepo
+      .createQueryBuilder("p")
+      .innerJoin("p.module", "m")
+      .innerJoin("p.action", "a")
+      .where("p.id IN (:...ids)", { ids: allowedPermissionIds })
+      .andWhere("(m.system = 'PUBLIC' OR m.system = :moduleSystem::modules_system_enum)", { moduleSystem: system })
+      .andWhere("(a.system = 'PUBLIC' OR a.system = :actionSystem::actions_system_enum)", { actionSystem: system })
+      .getMany();
+
+    const validPermissionIds = new Set(validPermissions.map(p => p.id));
+    const invalidIds = allowedPermissionIds.filter(id => !validPermissionIds.has(id));
+
+    if (invalidIds.length > 0) {
+      throw new NotFoundException({
+        message: `Permisos no encontrados: ${invalidIds.join(", ")}`,
+        code: ErrorCodes.PERMISSION_NOT_FOUND
+      });
+    }
+
+    // Get existing role permissions
+    const existingRolePermissions = await this.rolePermissionRepo.find({
+      where: { role_id: roleId }
+    });
+
+    const existingPermissionIds = new Set(existingRolePermissions.map(rp => rp.permission_id));
+    const newPermissionIds = new Set(allowedPermissionIds);
+
+    // Permissions to add (in newPermissionIds but not in existingPermissionIds)
+    const toAdd = allowedPermissionIds.filter(id => !existingPermissionIds.has(id));
+
+    // Permissions to remove (in existingPermissionIds but not in newPermissionIds)
+    const toRemove = existingRolePermissions
+      .filter(rp => !newPermissionIds.has(rp.permission_id))
+      .map(rp => rp.permission_id);
+
+    // Insert new permissions
+    if (toAdd.length > 0) {
+      await this.rolePermissionRepo.insert(
+        toAdd.map(permissionId => ({
+          role_id: roleId,
+          permission_id: permissionId,
+          allowed: true
+        }))
+      );
+    }
+
+    // Remove old permissions
+    if (toRemove.length > 0) {
+      await this.rolePermissionRepo.delete({
+        role_id: roleId,
+        permission_id: In(toRemove)
+      });
+    }
+
+    return {
+      roleId: role.id,
+      roleName: role.name,
+      added: toAdd.length,
+      removed: toRemove.length,
+      total: allowedPermissionIds.length
     };
   }
 }

@@ -20,8 +20,8 @@ export class Role {
   @Column({ type: "boolean", default: false })
   is_default!: boolean;
 
-  @Column({ type: "enum", enum: ["DAGRD", "SICGEM"] })
-  system!: "DAGRD" | "SICGEM";
+  @Column({ type: "enum", enum: ["PUBLIC", "DAGRD", "SICGEM"] })
+  system!: "PUBLIC" | "DAGRD" | "SICGEM";
 
   @Column({ type: "timestamp", default: () => "now()" })
   created_at!: Date;

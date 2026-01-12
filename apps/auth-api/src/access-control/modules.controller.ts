@@ -43,10 +43,32 @@ export class ModulesController {
   }
 
   @Get(":id/actions")
-  //@RequirePermission("/access-control/modules", "READ")
+  @RequirePermission("/access-control/modules", "ASSIGN_ACTION")
   @ResponseMessage("Acciones del módulo obtenidas")
   getModuleActions(@CurrentUser("system") system: SystemType, @Param("id") id: string) {
     return this.svc.getModuleWithActions(id, system);
+  }
+
+  @Post(":id/actions")
+  @RequirePermission("/access-control/modules", "ASSIGN_ACTION")
+  @ResponseMessage("Acción asignada al módulo exitosamente")
+  addAction(
+    @CurrentUser("system") system: SystemType,
+    @Param("id") id: string,
+    @Body() body: { actionId: string }
+  ) {
+    return this.svc.addActionToModule(id, body.actionId, system);
+  }
+
+  @Delete(":id/actions/:actionId")
+  @RequirePermission("/access-control/modules", "ASSIGN_ACTION")
+  @ResponseMessage("Acción removida del módulo exitosamente")
+  removeAction(
+    @CurrentUser("system") system: SystemType,
+    @Param("id") id: string,
+    @Param("actionId") actionId: string
+  ) {
+    return this.svc.removeActionFromModule(id, actionId, system);
   }
 
   @Post()

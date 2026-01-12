@@ -15,7 +15,7 @@ export class ActionsController {
   constructor(private svc: ActionsService) { }
 
   @Get()
-  //@RequirePermission("/access-control/actions", "READ")
+  @RequirePermission("/access-control/actions", "READ")
   @ResponseMessage("Lista de acciones obtenida")
   list(
     @CurrentUser("system") system: SystemType,

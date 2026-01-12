@@ -21,14 +21,14 @@ export class UserRoleController {
     }
 
     @Post(":id/roles")
-    //@RequirePermission("/access-control/users", "ASSIGN_ROLE")
+    @RequirePermission("/access-control/users", "ASSIGN_ROLE")
     @ResponseMessage("Rol asignado exitosamente")
     assignRole(@CurrentUser("system") system: SystemType, @Param("id") id: string, @Body() dto: AssignRoleBodyDto) {
         return this.svc.assignRole(id, dto.roleId, system);
     }
 
     @Delete(":id/roles/:roleId")
-    //@RequirePermission("/access-control/users", "ASSIGN_ROLE")
+    @RequirePermission("/access-control/users", "ASSIGN_ROLE")
     @ResponseMessage("Rol desasignado exitosamente")
     unassignRole(@CurrentUser("system") system: SystemType, @Param("id") id: string, @Param("roleId") roleId: string) {
         return this.svc.unassignRole(id, roleId, system);
