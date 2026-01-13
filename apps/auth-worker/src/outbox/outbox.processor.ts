@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { IsNull, Repository } from "typeorm";
 import { OutboxMessage } from "@common/entities/outbox-message.entity";
 import { OutboxPublisher } from "./outbox.publisher";
 
@@ -12,12 +12,12 @@ export class OutboxProcessor {
   constructor(
     @InjectRepository(OutboxMessage) private outbox: Repository<OutboxMessage>,
     private publisher: OutboxPublisher
-  ) {}
+  ) { }
 
   @Cron("*/2 * * * * *")
   async tick() {
     const batch = await this.outbox.find({
-      where: { processed_at: null },
+      where: { processed_at: IsNull() },
       order: { occurred_at: "ASC" },
       take: 20
     });

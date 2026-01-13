@@ -6,13 +6,15 @@ import { UserRole } from "@common/entities/user-role.entity";
 import { Role } from "@common/entities/role.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
+import { AuditLogService, AuditAction } from "@common/cosmosdb";
 
 @Injectable()
 export class UserRoleService {
     constructor(
         @InjectRepository(User) private userRepo: Repository<User>,
         @InjectRepository(UserRole) private userRoleRepo: Repository<UserRole>,
-        @InjectRepository(Role) private roleRepo: Repository<Role>
+        @InjectRepository(Role) private roleRepo: Repository<Role>,
+        private auditLog: AuditLogService
     ) { }
 
     async getUserWithRoles(userId: string, system: SystemType) {
@@ -86,6 +88,19 @@ export class UserRoleService {
 
         await this.userRoleRepo.save(userRole);
 
+        // Log de auditoría
+        await this.auditLog.logSuccess(AuditAction.ROLE_ASSIGNED, "UserRole", `${userId}:${roleId}`, {
+            entityName: `${userInSystem.first_name} ${userInSystem.last_name} → ${role.name}`,
+            system,
+            metadata: {
+                userId,
+                userEmail: userInSystem.email,
+                userName: `${userInSystem.first_name} ${userInSystem.last_name}`,
+                roleId,
+                roleName: role.name,
+            }
+        });
+
         return {
             userId,
             roleId,
@@ -126,6 +141,19 @@ export class UserRoleService {
         }
 
         await this.userRoleRepo.remove(existingUserRole);
+
+        // Log de auditoría
+        await this.auditLog.logSuccess(AuditAction.ROLE_UNASSIGNED, "UserRole", `${userId}:${roleId}`, {
+            entityName: `${userInSystem.first_name} ${userInSystem.last_name} ✕ ${role.name}`,
+            system,
+            metadata: {
+                userId,
+                userEmail: userInSystem.email,
+                userName: `${userInSystem.first_name} ${userInSystem.last_name}`,
+                roleId,
+                roleName: role.name,
+            }
+        });
 
         return {
             userId,

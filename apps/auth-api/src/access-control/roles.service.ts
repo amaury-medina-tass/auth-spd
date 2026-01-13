@@ -6,13 +6,15 @@ import { RolePermission } from "@common/entities/role-permission.entity";
 import { Permission } from "@common/entities/permission.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
+import { AuditLogService, AuditAction, buildChanges } from "@common/cosmosdb";
 
 @Injectable()
 export class RolesService {
   constructor(
     @InjectRepository(Role) private repo: Repository<Role>,
     @InjectRepository(RolePermission) private rolePermissionRepo: Repository<RolePermission>,
-    @InjectRepository(Permission) private permissionRepo: Repository<Permission>
+    @InjectRepository(Permission) private permissionRepo: Repository<Permission>,
+    private auditLog: AuditLogService
   ) { }
 
   private readonly sortableFields = ["name", "is_active", "created_at", "updated_at"];
@@ -186,7 +188,19 @@ export class RolesService {
       system
     });
 
-    return this.repo.save(role);
+    const saved = await this.repo.save(role);
+
+    await this.auditLog.logSuccess(AuditAction.ROLE_CREATED, "Role", saved.id, {
+      entityName: saved.name,
+      system,
+      metadata: {
+        name: saved.name,
+        description: saved.description,
+        is_default: saved.is_default,
+      }
+    });
+
+    return saved;
   }
 
   async update(id: string, system: SystemType, data: { name?: string; description?: string; is_active?: boolean; is_default?: boolean }) {
@@ -197,6 +211,13 @@ export class RolesService {
     if (!role) {
       throw new NotFoundException({ message: "Rol no encontrado", code: ErrorCodes.ROLE_NOT_FOUND });
     }
+
+    const oldValues = {
+      name: role.name,
+      description: role.description,
+      is_active: role.is_active,
+      is_default: role.is_default,
+    };
 
     if (data.name !== undefined && data.name !== role.name) {
       const existing = await this.repo.findOne({
@@ -222,7 +243,16 @@ export class RolesService {
     if (data.is_default !== undefined) role.is_default = data.is_default;
     role.updated_at = new Date();
 
-    return this.repo.save(role);
+    const saved = await this.repo.save(role);
+
+    const changes = buildChanges(oldValues, data, Object.keys(data));
+    await this.auditLog.logSuccess(AuditAction.ROLE_UPDATED, "Role", id, {
+      entityName: saved.name,
+      system,
+      changes,
+    });
+
+    return saved;
   }
 
   async delete(id: string, system: SystemType) {
@@ -242,11 +272,18 @@ export class RolesService {
       });
     }
 
+    const roleName = role.name;
     await this.repo.remove(role);
+
+    await this.auditLog.logSuccess(AuditAction.ROLE_DELETED, "Role", id, {
+      entityName: roleName,
+      system,
+      metadata: { name: roleName }
+    });
 
     return {
       id,
-      name: role.name,
+      name: roleName,
       deletedAt: new Date()
     };
   }
@@ -261,6 +298,13 @@ export class RolesService {
     // If no permissions sent, just clear all permissions for this role
     if (allowedPermissionIds.length === 0) {
       await this.rolePermissionRepo.delete({ role_id: roleId });
+
+      await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, "RolePermissions", roleId, {
+        entityName: `${role.name} - Todos los permisos`,
+        system,
+        metadata: { action: "clear_all", roleName: role.name }
+      });
+
       return {
         roleId: role.id,
         roleName: role.name,
@@ -325,6 +369,20 @@ export class RolesService {
       });
     }
 
+    // Log the permission changes
+    if (toAdd.length > 0 || toRemove.length > 0) {
+      await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, "RolePermissions", roleId, {
+        entityName: role.name,
+        system,
+        metadata: {
+          roleName: role.name,
+          added: toAdd.length,
+          removed: toRemove.length,
+          total: allowedPermissionIds.length,
+        }
+      });
+    }
+
     return {
       roleId: role.id,
       roleName: role.name,
@@ -334,4 +392,3 @@ export class RolesService {
     };
   }
 }
-

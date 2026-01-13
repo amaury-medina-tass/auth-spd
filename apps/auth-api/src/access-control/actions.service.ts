@@ -4,12 +4,16 @@ import { Repository, ILike } from "typeorm";
 import { ActionEntity } from "@common/entities/action.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
+import { AuditLogService, AuditAction, buildChanges } from "@common/cosmosdb";
 
 type ActionSystemType = "PUBLIC" | SystemType;
 
 @Injectable()
 export class ActionsService {
-  constructor(@InjectRepository(ActionEntity) private repo: Repository<ActionEntity>) { }
+  constructor(
+    @InjectRepository(ActionEntity) private repo: Repository<ActionEntity>,
+    private auditLog: AuditLogService
+  ) { }
 
   private readonly sortableFields = ["code_action", "name", "system", "created_at"];
 
@@ -103,7 +107,15 @@ export class ActionsService {
       system
     });
 
-    return this.repo.save(action);
+    const saved = await this.repo.save(action);
+
+    await this.auditLog.logSuccess(AuditAction.ACTION_CREATED, "Action", saved.id, {
+      entityName: saved.name,
+      system,
+      metadata: { code_action: saved.code_action, name: saved.name }
+    });
+
+    return saved;
   }
 
   async update(id: string, system: SystemType, data: { name?: string; description?: string }) {
@@ -113,11 +125,23 @@ export class ActionsService {
       throw new NotFoundException({ message: "Acción no encontrada", code: ErrorCodes.ACTION_NOT_FOUND });
     }
 
+    const oldValues = { name: action.name, description: action.description };
+
     if (data.name !== undefined) action.name = data.name;
     if (data.description !== undefined) action.description = data.description;
     action.updated_at = new Date();
 
-    return this.repo.save(action);
+    const saved = await this.repo.save(action);
+
+    const changes = buildChanges(oldValues, data, Object.keys(data));
+    await this.auditLog.logSuccess(AuditAction.ACTION_UPDATED, "Action", id, {
+      entityName: saved.name,
+      system,
+      changes,
+      metadata: { code_action: saved.code_action }
+    });
+
+    return saved;
   }
 
   async delete(id: string, system: SystemType) {
@@ -131,9 +155,16 @@ export class ActionsService {
       throw new NotFoundException({ message: "Acción no encontrada", code: ErrorCodes.ACTION_NOT_FOUND });
     }
 
+    const actionName = action.name;
+    const codeAction = action.code_action;
     await this.repo.remove(action);
 
-    return { id, code_action: action.code_action, deletedAt: new Date() };
+    await this.auditLog.logSuccess(AuditAction.ACTION_DELETED, "Action", id, {
+      entityName: actionName,
+      system,
+      metadata: { code_action: codeAction, name: actionName }
+    });
+
+    return { id, code_action: codeAction, deletedAt: new Date() };
   }
 }
-

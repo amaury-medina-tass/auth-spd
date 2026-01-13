@@ -6,13 +6,15 @@ import { UserRole } from "@common/entities/user-role.entity";
 import { Role } from "@common/entities/role.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
+import { AuditLogService, AuditAction, buildChanges } from "@common/cosmosdb";
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User) private repo: Repository<User>,
     @InjectRepository(UserRole) private userRoleRepo: Repository<UserRole>,
-    @InjectRepository(Role) private roleRepo: Repository<Role>
+    @InjectRepository(Role) private roleRepo: Repository<Role>,
+    private auditLog: AuditLogService
   ) { }
 
   private readonly sortableFields = ["first_name", "last_name", "email", "document_number", "is_active", "created_at", "updated_at"];
@@ -109,6 +111,15 @@ export class UsersService {
       throw new NotFoundException({ message: "Usuario no encontrado en este sistema", code: ErrorCodes.USER_NOT_FOUND });
     }
 
+    // Guardar valores anteriores para el log de cambios
+    const oldValues = {
+      email: user.email,
+      document_number: user.document_number,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      is_active: user.is_active,
+    };
+
     if (data.email !== undefined && data.email !== user.email) {
       const existingByEmail = await this.repo.findOne({ where: { email: data.email } });
       if (existingByEmail && existingByEmail.id !== id) {
@@ -133,6 +144,18 @@ export class UsersService {
 
     await this.repo.save(user);
 
+    // Log detallado con cambios
+    const changes = buildChanges(oldValues, data, Object.keys(data));
+
+    await this.auditLog.logSuccess(AuditAction.USER_UPDATED, "User", id, {
+      entityName: `${user.first_name} ${user.last_name}`,
+      system,
+      changes,
+      metadata: {
+        email: user.email,
+      }
+    });
+
     const { password_hash, ...result } = user;
     return result;
   }
@@ -149,12 +172,24 @@ export class UsersService {
       throw new NotFoundException({ message: "Usuario no encontrado en este sistema", code: ErrorCodes.USER_NOT_FOUND });
     }
 
+    const entityName = `${user.first_name} ${user.last_name}`;
+    const userEmail = user.email;
+
     await this.userRoleRepo.delete({ user_id: id });
     await this.repo.remove(user);
 
+    await this.auditLog.logSuccess(AuditAction.USER_DELETED, "User", id, {
+      entityName,
+      system,
+      metadata: {
+        email: userEmail,
+        document_number: user.document_number,
+      }
+    });
+
     return {
       id,
-      email: user.email,
+      email: userEmail,
       deletedAt: new Date()
     };
   }

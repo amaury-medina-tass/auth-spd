@@ -6,13 +6,15 @@ import { ActionEntity } from "@common/entities/action.entity";
 import { Permission } from "@common/entities/permission.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
+import { AuditLogService, AuditAction, buildChanges } from "@common/cosmosdb";
 
 @Injectable()
 export class ModulesService {
   constructor(
     @InjectRepository(ModuleEntity) private repo: Repository<ModuleEntity>,
     @InjectRepository(ActionEntity) private actionRepo: Repository<ActionEntity>,
-    @InjectRepository(Permission) private permissionRepo: Repository<Permission>
+    @InjectRepository(Permission) private permissionRepo: Repository<Permission>,
+    private auditLog: AuditLogService
   ) { }
 
   private readonly sortableFields = ["name", "path", "created_at"];
@@ -101,7 +103,15 @@ export class ModulesService {
       system
     });
 
-    return this.repo.save(module);
+    const saved = await this.repo.save(module);
+
+    await this.auditLog.logSuccess(AuditAction.MODULE_CREATED, "Module", saved.id, {
+      entityName: saved.name,
+      system,
+      metadata: { name: saved.name, path: saved.path }
+    });
+
+    return saved;
   }
 
   async update(id: string, system: SystemType, data: { name?: string; description?: string; path?: string }) {
@@ -110,6 +120,8 @@ export class ModulesService {
     if (module.system === "PUBLIC") {
       throw new ForbiddenException({ message: "No se puede modificar un módulo PUBLIC", code: ErrorCodes.MODULE_PUBLIC_CANNOT_MODIFY });
     }
+
+    const oldValues = { name: module.name, description: module.description, path: module.path };
 
     if (data.path !== undefined && data.path !== module.path) {
       // Check if new path already exists
@@ -124,7 +136,16 @@ export class ModulesService {
     if (data.description !== undefined) module.description = data.description;
     module.updated_at = new Date();
 
-    return this.repo.save(module);
+    const saved = await this.repo.save(module);
+
+    const changes = buildChanges(oldValues, data, Object.keys(data));
+    await this.auditLog.logSuccess(AuditAction.MODULE_UPDATED, "Module", id, {
+      entityName: saved.name,
+      system,
+      changes,
+    });
+
+    return saved;
   }
 
   async delete(id: string, system: SystemType) {
@@ -134,9 +155,17 @@ export class ModulesService {
       throw new ForbiddenException({ message: "No se puede eliminar un módulo PUBLIC", code: ErrorCodes.MODULE_PUBLIC_CANNOT_DELETE });
     }
 
+    const moduleName = module.name;
+    const modulePath = module.path;
     await this.repo.remove(module);
 
-    return { id, path: module.path, deletedAt: new Date() };
+    await this.auditLog.logSuccess(AuditAction.MODULE_DELETED, "Module", id, {
+      entityName: moduleName,
+      system,
+      metadata: { name: moduleName, path: modulePath }
+    });
+
+    return { id, path: modulePath, deletedAt: new Date() };
   }
 
   async getModuleWithActions(id: string, system: SystemType) {
@@ -215,6 +244,15 @@ export class ModulesService {
 
     const savedPermission = await this.permissionRepo.save(permission);
 
+    await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, "Permission", savedPermission.id, {
+      entityName: `${module.name} → ${action.name}`,
+      system,
+      metadata: {
+        moduleId, moduleName: module.name, modulePath: module.path,
+        actionId, actionCode: action.code_action, actionName: action.name,
+      }
+    });
+
     return {
       permissionId: savedPermission.id,
       module: {
@@ -231,7 +269,7 @@ export class ModulesService {
   }
 
   async removeActionFromModule(moduleId: string, actionId: string, system: SystemType) {
-    await this.findOne(moduleId, system);
+    const module = await this.findOne(moduleId, system);
 
     const permission = await this.permissionRepo.findOne({
       where: { module: { id: moduleId }, action: { id: actionId } },
@@ -242,7 +280,15 @@ export class ModulesService {
       throw new NotFoundException({ message: "Permiso no encontrado", code: ErrorCodes.PERMISSION_NOT_FOUND });
     }
 
+    const actionName = permission.action?.name;
+    const actionCode = permission.action?.code_action;
     await this.permissionRepo.remove(permission);
+
+    await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, "Permission", `${moduleId}:${actionId}`, {
+      entityName: `${module.name} ✕ ${actionName}`,
+      system,
+      metadata: { moduleId, moduleName: module.name, actionId, actionCode, actionName }
+    });
 
     return {
       moduleId,
@@ -251,4 +297,3 @@ export class ModulesService {
     };
   }
 }
-

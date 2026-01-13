@@ -6,13 +6,15 @@ import { ModuleEntity } from "@common/entities/module.entity";
 import { ActionEntity } from "@common/entities/action.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
+import { AuditLogService, AuditAction } from "@common/cosmosdb";
 
 @Injectable()
 export class PermissionsService {
   constructor(
     @InjectRepository(Permission) private repo: Repository<Permission>,
     @InjectRepository(ModuleEntity) private modules: Repository<ModuleEntity>,
-    @InjectRepository(ActionEntity) private actions: Repository<ActionEntity>
+    @InjectRepository(ActionEntity) private actions: Repository<ActionEntity>,
+    private auditLog: AuditLogService
   ) { }
 
   async findAllPaginated(
@@ -165,6 +167,15 @@ export class PermissionsService {
 
     const saved = await this.repo.save(permission);
 
+    await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, "Permission", saved.id, {
+      entityName: `${module.name} → ${action.name}`,
+      system,
+      metadata: {
+        moduleId: module.id, modulePath: module.path, moduleName: module.name,
+        actionId: action.id, actionCode: action.code_action, actionName: action.name,
+      }
+    });
+
     return {
       id: saved.id,
       module: { id: module.id, path: module.path, name: module.name },
@@ -176,13 +187,17 @@ export class PermissionsService {
     const result = await this.repo.manager.query<{
       id: string;
       module_path: string;
+      module_name: string;
       action_code: string;
+      action_name: string;
     }[]>(
       `
       SELECT 
         p.id,
         m.path AS module_path,
-        a.code_action AS action_code
+        m.name AS module_name,
+        a.code_action AS action_code,
+        a.name AS action_name
       FROM permissions p
       JOIN modules m ON m.id = p.module_id AND m.system = $2::modules_system_enum
       JOIN actions a ON a.id = p.action_id
@@ -197,6 +212,15 @@ export class PermissionsService {
 
     const p = result[0];
     await this.repo.delete(id);
+
+    await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, "Permission", id, {
+      entityName: `${p.module_name} ✕ ${p.action_name}`,
+      system,
+      metadata: {
+        modulePath: p.module_path, moduleName: p.module_name,
+        actionCode: p.action_code, actionName: p.action_name,
+      }
+    });
 
     return {
       id,
