@@ -50,13 +50,13 @@ export class AuthService {
   }
 
   private async getUserPermissions(userId: string, system: SystemType): Promise<PermissionsPayload> {
-    // Get modules filtered by system
+    // Get modules filtered by system OR PUBLIC
     const systemModules = await this.dataSource
       .getRepository(ModuleEntity)
-      .find({
-        select: ["id", "name", "path"],
-        where: { system }
-      });
+      .createQueryBuilder("m")
+      .select(["m.id", "m.name", "m.path"])
+      .where("m.system = :system OR m.system = 'PUBLIC'", { system })
+      .getMany();
 
     // Get which actions exist for each module in the permissions table (with names)
     const moduleActionsQuery = await this.dataSource.query<{ module_id: string; action_code: string; action_name: string }[]>(
@@ -65,7 +65,7 @@ export class AuthService {
       FROM permissions p
       JOIN actions a ON a.id = p.action_id
       JOIN modules m ON m.id = p.module_id
-      WHERE m.system = $1::modules_system_enum
+      WHERE (m.system = $1::modules_system_enum OR m.system = 'PUBLIC')
         AND (a.system = 'PUBLIC' OR a.system = $2::actions_system_enum)
       `,
       [system, system]
@@ -92,7 +92,7 @@ export class AuthService {
       JOIN roles r ON r.id = ur.role_id AND r.is_active = TRUE AND r.system = $2::roles_system_enum
       JOIN role_permissions rp ON rp.role_id = r.id AND rp.allowed = TRUE
       JOIN permissions p ON p.id = rp.permission_id
-      JOIN modules m ON m.id = p.module_id AND m.system = $3::modules_system_enum
+      JOIN modules m ON m.id = p.module_id AND (m.system = $3::modules_system_enum OR m.system = 'PUBLIC')
       JOIN actions a ON a.id = p.action_id AND (a.system = 'PUBLIC' OR a.system = $4::actions_system_enum)
       WHERE u.id = $1 AND u.is_active = TRUE
       `,

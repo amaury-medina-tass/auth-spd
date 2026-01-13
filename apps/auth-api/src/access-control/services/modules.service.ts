@@ -6,7 +6,7 @@ import { ActionEntity } from "@common/entities/action.entity";
 import { Permission } from "@common/entities/permission.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
-import { AuditLogService, AuditAction, buildChanges } from "@common/cosmosdb";
+import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@common/cosmosdb";
 
 @Injectable()
 export class ModulesService {
@@ -105,7 +105,7 @@ export class ModulesService {
 
         const saved = await this.repo.save(module);
 
-        await this.auditLog.logSuccess(AuditAction.MODULE_CREATED, "Module", saved.id, {
+        await this.auditLog.logSuccess(AuditAction.MODULE_CREATED, AuditEntityType.MODULE, saved.id, {
             entityName: saved.name,
             system,
             metadata: { name: saved.name, path: saved.path }
@@ -139,7 +139,7 @@ export class ModulesService {
         const saved = await this.repo.save(module);
 
         const changes = buildChanges(oldValues, data, Object.keys(data));
-        await this.auditLog.logSuccess(AuditAction.MODULE_UPDATED, "Module", id, {
+        await this.auditLog.logSuccess(AuditAction.MODULE_UPDATED, AuditEntityType.MODULE, id, {
             entityName: saved.name,
             system,
             changes,
@@ -159,7 +159,7 @@ export class ModulesService {
         const modulePath = module.path;
         await this.repo.remove(module);
 
-        await this.auditLog.logSuccess(AuditAction.MODULE_DELETED, "Module", id, {
+        await this.auditLog.logSuccess(AuditAction.MODULE_DELETED, AuditEntityType.MODULE, id, {
             entityName: moduleName,
             system,
             metadata: { name: moduleName, path: modulePath }
@@ -244,8 +244,8 @@ export class ModulesService {
 
         const savedPermission = await this.permissionRepo.save(permission);
 
-        await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, "Permission", savedPermission.id, {
-            entityName: `${module.name} → ${action.name}`,
+        await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, AuditEntityType.PERMISSION, savedPermission.id, {
+            entityName: module.name,
             system,
             metadata: {
                 moduleId, moduleName: module.name, modulePath: module.path,
@@ -284,8 +284,8 @@ export class ModulesService {
         const actionCode = permission.action?.code_action;
         await this.permissionRepo.remove(permission);
 
-        await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, "Permission", `${moduleId}:${actionId}`, {
-            entityName: `${module.name} ✕ ${actionName}`,
+        await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, AuditEntityType.PERMISSION, `${moduleId}:${actionId}`, {
+            entityName: module.name,
             system,
             metadata: { moduleId, moduleName: module.name, actionId, actionCode, actionName }
         });

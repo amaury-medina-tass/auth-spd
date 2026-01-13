@@ -41,6 +41,16 @@ export enum AuditAction {
     ACTION_DELETED = "ACTION_DELETED",
 }
 
+// === Enum de Tipos de Entidad ===
+export enum AuditEntityType {
+    USER = "User",
+    ROLE = "Role",
+    ROLE_PERMISSIONS = "RolePermissions",
+    USER_ROLE = "UserRole",
+    MODULE = "Module",
+    PERMISSION = "Permission",
+}
+
 // === Labels legibles por acción ===
 export const ACTION_LABELS: Record<AuditAction, string> = {
     [AuditAction.USER_CREATED]: "Usuario Creado",
@@ -103,6 +113,30 @@ export interface AuditError {
     message: string;
 }
 
+export interface AuditMetadata {
+    // Roles
+    name?: string;
+    description?: string;
+    is_default?: boolean;
+    roleName?: string;
+    
+    // Permissions
+    action?: string;
+    actionName?: string;
+    added?: number;
+    removed?: number;
+    total?: number;
+    addedIds?: string[];
+    removedIds?: string[];
+
+    // Users
+    email?: string;
+    document_number?: string;
+
+    // Allow other fields but prefer typed ones
+    [key: string]: any;
+}
+
 export interface AuditLogEntry {
     // Identificación
     id: string;
@@ -114,7 +148,7 @@ export interface AuditLogEntry {
     success: boolean;
 
     // Entidad Afectada
-    entityType: string;
+    entityType: AuditEntityType;
     entityId: string;
     entityName?: string;
 
@@ -133,7 +167,7 @@ export interface AuditLogEntry {
     error?: AuditError;
 
     // Metadatos adicionales
-    metadata?: Record<string, any>;
+    metadata?: AuditMetadata;
 }
 
 // === Helpers ===

@@ -6,7 +6,7 @@ import { UserRole } from "@common/entities/user-role.entity";
 import { Role } from "@common/entities/role.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
-import { AuditLogService, AuditAction, buildChanges } from "@common/cosmosdb";
+import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@common/cosmosdb";
 
 @Injectable()
 export class UsersService {
@@ -147,7 +147,7 @@ export class UsersService {
     // Log detallado con cambios
     const changes = buildChanges(oldValues, data, Object.keys(data));
 
-    await this.auditLog.logSuccess(AuditAction.USER_UPDATED, "User", id, {
+    await this.auditLog.logSuccess(AuditAction.USER_UPDATED, AuditEntityType.USER, id, {
       entityName: `${user.first_name} ${user.last_name}`,
       system,
       changes,
@@ -178,7 +178,7 @@ export class UsersService {
     await this.userRoleRepo.delete({ user_id: id });
     await this.repo.remove(user);
 
-    await this.auditLog.logSuccess(AuditAction.USER_DELETED, "User", id, {
+    await this.auditLog.logSuccess(AuditAction.USER_DELETED, AuditEntityType.USER, id, {
       entityName,
       system,
       metadata: {

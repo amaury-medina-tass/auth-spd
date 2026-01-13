@@ -1,29 +1,29 @@
 -- ===============================
--- SEED: ROLES PARA DAGRD
+-- SEED: ROLES PARA SPD
 -- ===============================
 
--- Rol Usuario DAGRD (default)
+-- Rol Usuario SPD (default)
 INSERT INTO roles (id, name, description, is_active, is_default, system, created_at, updated_at)
 VALUES (
     gen_random_uuid(),
     'Usuario',
-    'Rol por defecto para usuarios registrados en DAGRD',
+    'Rol por defecto para usuarios registrados en SPD',
     true,
     true,
-    'DAGRD',
+    'SPD',
     NOW(),
     NOW()
 );
 
--- Rol Administrador DAGRD
+-- Rol Administrador SPD
 INSERT INTO roles (id, name, description, is_active, is_default, system, created_at, updated_at)
 VALUES (
     gen_random_uuid(),
     'Administrador',
-    'Rol con privilegios administrativos totales en DAGRD',
+    'Rol con privilegios administrativos totales en SPD',
     true,
     false,
-    'DAGRD',
+    'SPD',
     NOW(),
     NOW()
 );

@@ -17,8 +17,8 @@ export class ModuleEntity {
   @Column({ type: "varchar", length: 200 })
   path!: string;
 
-  @Column({ type: "enum", enum: ["PUBLIC", "DAGRD", "SICGEM"], default: "PUBLIC" })
-  system!: "PUBLIC" | "DAGRD" | "SICGEM";
+  @Column({ type: "enum", enum: ["PUBLIC", "SPD", "SICGEM"], default: "PUBLIC" })
+  system!: "PUBLIC" | "SPD" | "SICGEM";
 
   @Column({ type: "timestamp", default: () => "now()" })
   created_at!: Date;

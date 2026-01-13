@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 
@@ -50,7 +50,9 @@ export class VerificationService {
                     code: verificationCode
                 }
             );
-        } catch (e) { }
+        } catch (e) {
+            throw new InternalServerErrorException("Error al enviar el correo de verificación");
+        }
 
         return { ok: true, message: "Código reenviado correctamente" };
     }

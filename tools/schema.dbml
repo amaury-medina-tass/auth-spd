@@ -2,7 +2,7 @@
 // ENUM: SYSTEM_TYPE
 // Sistemas disponibles
 // ===============================
-// PUBLIC, DAGRD, SICGEM
+// PUBLIC, SPD, SICGEM
 
 // ===============================
 // ACTIONS
@@ -14,7 +14,7 @@ Table actions {
   code_action varchar(50) [not null, note: "Código de la acción. Ej: READ, CREATE, UPDATE, DELETE, ASSIGN_ROLE"]
   name varchar(100) [not null, note: "Nombre legible de la acción. Ej: Leer, Crear, Actualizar"]
   description text [note: "Descripción funcional de la acción"]
-  system actions_system_enum [default: 'PUBLIC', not null, note: "Sistema al que pertenece: PUBLIC, DAGRD, SICGEM"]
+  system actions_system_enum [default: 'PUBLIC', not null, note: "Sistema al que pertenece: PUBLIC, SPD, SICGEM"]
   created_at timestamp [default: `now()`, not null, note: "Fecha de creación del registro"]
   updated_at timestamp [default: `now()`, not null, note: "Fecha de última actualización"]
 
@@ -33,7 +33,7 @@ Table modules {
   name varchar(200) [unique, not null, note: "Nombre del módulo. Ej: Usuarios, Roles"]
   description text [note: "Descripción funcional del módulo"]
   path varchar(200) [unique, not null, note: "Ruta base. Ej: /access-control/users"]
-  system modules_system_enum [default: 'PUBLIC', not null, note: "Sistema al que pertenece: PUBLIC, DAGRD, SICGEM"]
+  system modules_system_enum [default: 'PUBLIC', not null, note: "Sistema al que pertenece: PUBLIC, SPD, SICGEM"]
   created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
   updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 }
@@ -49,7 +49,7 @@ Table roles {
   description text [note: "Descripción del rol y su propósito"]
   is_active boolean [default: true, not null, note: "Indica si el rol está activo"]
   is_default boolean [default: false, not null, note: "Indica si es el rol por defecto del sistema"]
-  system roles_system_enum [not null, note: "Sistema al que pertenece: PUBLIC, DAGRD, SICGEM"]
+  system roles_system_enum [not null, note: "Sistema al que pertenece: PUBLIC, SPD, SICGEM"]
   created_at timestamp [default: `now()`, not null, note: "Fecha de creación"]
   updated_at timestamp [default: `now()`, not null, note: "Fecha de actualización"]
 

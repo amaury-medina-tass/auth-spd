@@ -6,7 +6,7 @@ import { RolePermission } from "@common/entities/role-permission.entity";
 import { Permission } from "@common/entities/permission.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
-import { AuditLogService, AuditAction, buildChanges } from "@common/cosmosdb";
+import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@common/cosmosdb";
 
 @Injectable()
 export class RolesService {
@@ -190,7 +190,7 @@ export class RolesService {
 
         const saved = await this.repo.save(role);
 
-        await this.auditLog.logSuccess(AuditAction.ROLE_CREATED, "Role", saved.id, {
+        await this.auditLog.logSuccess(AuditAction.ROLE_CREATED, AuditEntityType.ROLE, saved.id, {
             entityName: saved.name,
             system,
             metadata: {
@@ -246,7 +246,7 @@ export class RolesService {
         const saved = await this.repo.save(role);
 
         const changes = buildChanges(oldValues, data, Object.keys(data));
-        await this.auditLog.logSuccess(AuditAction.ROLE_UPDATED, "Role", id, {
+        await this.auditLog.logSuccess(AuditAction.ROLE_UPDATED, AuditEntityType.ROLE, id, {
             entityName: saved.name,
             system,
             changes,
@@ -275,7 +275,7 @@ export class RolesService {
         const roleName = role.name;
         await this.repo.remove(role);
 
-        await this.auditLog.logSuccess(AuditAction.ROLE_DELETED, "Role", id, {
+        await this.auditLog.logSuccess(AuditAction.ROLE_DELETED, AuditEntityType.ROLE, id, {
             entityName: roleName,
             system,
             metadata: { name: roleName }
@@ -299,7 +299,7 @@ export class RolesService {
         if (allowedPermissionIds.length === 0) {
             await this.rolePermissionRepo.delete({ role_id: roleId });
 
-            await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, "RolePermissions", roleId, {
+            await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, AuditEntityType.ROLE_PERMISSIONS, roleId, {
                 entityName: `${role.name} - Todos los permisos`,
                 system,
                 metadata: { action: "clear_all", roleName: role.name }
@@ -317,8 +317,8 @@ export class RolesService {
         // Validate all permission IDs exist and belong to the correct system
         const validPermissions = await this.permissionRepo
             .createQueryBuilder("p")
-            .innerJoin("p.module", "m")
-            .innerJoin("p.action", "a")
+            .innerJoinAndSelect("p.module", "m")
+            .innerJoinAndSelect("p.action", "a")
             .where("p.id IN (:...ids)", { ids: allowedPermissionIds })
             .andWhere("(m.system = 'PUBLIC' OR m.system = :moduleSystem::modules_system_enum)", { moduleSystem: system })
             .andWhere("(a.system = 'PUBLIC' OR a.system = :actionSystem::actions_system_enum)", { actionSystem: system })
@@ -336,7 +336,8 @@ export class RolesService {
 
         // Get existing role permissions
         const existingRolePermissions = await this.rolePermissionRepo.find({
-            where: { role_id: roleId }
+            where: { role_id: roleId },
+            relations: ["permission", "permission.action", "permission.module"]
         });
 
         const existingPermissionIds = new Set(existingRolePermissions.map(rp => rp.permission_id));
@@ -370,15 +371,37 @@ export class RolesService {
         }
 
         // Log the permission changes
-        if (toAdd.length > 0 || toRemove.length > 0) {
-            await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, "RolePermissions", roleId, {
+        // Log the permission changes
+        if (toAdd.length > 0) {
+            const addedDetails = validPermissions
+                .filter(p => toAdd.includes(p.id))
+                .map(p => `${p.module.name}: ${p.action.name}`);
+
+            await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, AuditEntityType.ROLE_PERMISSIONS, roleId, {
                 entityName: role.name,
                 system,
                 metadata: {
                     roleName: role.name,
                     added: toAdd.length,
+                    total: allowedPermissionIds.length,
+                    addedIds: addedDetails,
+                }
+            });
+        }
+
+        if (toRemove.length > 0) {
+            const removedDetails = existingRolePermissions
+                .filter(rp => toRemove.includes(rp.permission_id))
+                .map(rp => `${rp.permission.module.name}: ${rp.permission.action.name}`);
+
+            await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, AuditEntityType.ROLE_PERMISSIONS, roleId, {
+                entityName: role.name,
+                system,
+                metadata: {
+                    roleName: role.name,
                     removed: toRemove.length,
                     total: allowedPermissionIds.length,
+                    removedIds: removedDetails,
                 }
             });
         }

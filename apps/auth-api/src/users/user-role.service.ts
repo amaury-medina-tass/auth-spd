@@ -6,7 +6,7 @@ import { UserRole } from "@common/entities/user-role.entity";
 import { Role } from "@common/entities/role.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
-import { AuditLogService, AuditAction } from "@common/cosmosdb";
+import { AuditLogService, AuditAction, AuditEntityType } from "@common/cosmosdb";
 
 @Injectable()
 export class UserRoleService {
@@ -89,8 +89,8 @@ export class UserRoleService {
         await this.userRoleRepo.save(userRole);
 
         // Log de auditoría
-        await this.auditLog.logSuccess(AuditAction.ROLE_ASSIGNED, "UserRole", `${userId}:${roleId}`, {
-            entityName: `${userInSystem.first_name} ${userInSystem.last_name} → ${role.name}`,
+        await this.auditLog.logSuccess(AuditAction.ROLE_ASSIGNED, AuditEntityType.USER_ROLE, `${userId}:${roleId}`, {
+            entityName: `${userInSystem.first_name} ${userInSystem.last_name}`,
             system,
             metadata: {
                 userId,
@@ -143,8 +143,8 @@ export class UserRoleService {
         await this.userRoleRepo.remove(existingUserRole);
 
         // Log de auditoría
-        await this.auditLog.logSuccess(AuditAction.ROLE_UNASSIGNED, "UserRole", `${userId}:${roleId}`, {
-            entityName: `${userInSystem.first_name} ${userInSystem.last_name} ✕ ${role.name}`,
+        await this.auditLog.logSuccess(AuditAction.ROLE_UNASSIGNED, AuditEntityType.USER_ROLE, `${userId}:${roleId}`, {
+            entityName: `${userInSystem.first_name} ${userInSystem.last_name}`,
             system,
             metadata: {
                 userId,

@@ -6,7 +6,7 @@ import { ModuleEntity } from "@common/entities/module.entity";
 import { ActionEntity } from "@common/entities/action.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
-import { AuditLogService, AuditAction } from "@common/cosmosdb";
+import { AuditLogService, AuditAction, AuditEntityType } from "@common/cosmosdb";
 
 @Injectable()
 export class PermissionsService {
@@ -167,8 +167,8 @@ export class PermissionsService {
 
         const saved = await this.repo.save(permission);
 
-        await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, "Permission", saved.id, {
-            entityName: `${module.name} → ${action.name}`,
+        await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, AuditEntityType.PERMISSION, saved.id, {
+            entityName: module.name,
             system,
             metadata: {
                 moduleId: module.id, modulePath: module.path, moduleName: module.name,
@@ -213,8 +213,8 @@ export class PermissionsService {
         const p = result[0];
         await this.repo.delete(id);
 
-        await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, "Permission", id, {
-            entityName: `${p.module_name} ✕ ${p.action_name}`,
+        await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, AuditEntityType.PERMISSION, id, {
+            entityName: p.module_name,
             system,
             metadata: {
                 modulePath: p.module_path, moduleName: p.module_name,

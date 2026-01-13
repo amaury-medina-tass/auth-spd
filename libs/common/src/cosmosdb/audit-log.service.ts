@@ -7,6 +7,7 @@ import {
     AuditChange,
     AuditError,
     getActionLabel,
+    AuditEntityType,
 } from "@common/types/audit.types";
 
 export const COSMOS_DATABASE = "COSMOS_DATABASE";
@@ -14,7 +15,7 @@ export const COSMOS_CONTAINER_NAME = "COSMOS_CONTAINER_NAME";
 
 // Re-export types for convenience
 export type { AuditLogEntry, AuditActor, AuditChange, AuditError };
-export { AuditAction, getActionLabel };
+export { AuditAction, getActionLabel, AuditEntityType };
 
 export interface LogOptions {
     entityName?: string;
@@ -69,7 +70,7 @@ export class AuditLogService {
      */
     async log(
         action: AuditAction,
-        entityType: string,
+        entityType: AuditEntityType,
         entityId: string,
         success: boolean,
         options?: LogOptions
@@ -115,7 +116,7 @@ export class AuditLogService {
      */
     async logSuccess(
         action: AuditAction,
-        entityType: string,
+        entityType: AuditEntityType,
         entityId: string,
         options?: Omit<LogOptions, "error">
     ): Promise<void> {
@@ -127,7 +128,7 @@ export class AuditLogService {
      */
     async logError(
         action: AuditAction,
-        entityType: string,
+        entityType: AuditEntityType,
         entityId: string,
         error: AuditError,
         options?: Omit<LogOptions, "error">
