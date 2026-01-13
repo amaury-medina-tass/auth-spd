@@ -10,14 +10,14 @@ import { OutboxModule } from "../outbox/outbox.module";
 import { AuthModule } from "../auth/auth.module";
 import { PermissionsGuard } from "../common/guards/permissions.guard";
 
-import { RolesController } from "./roles.controller";
-import { RolesService } from "./roles.service";
-import { ModulesController } from "./modules.controller";
-import { ModulesService } from "./modules.service";
-import { ActionsController } from "./actions.controller";
-import { ActionsService } from "./actions.service";
-import { PermissionsController } from "./permissions.controller";
-import { PermissionsService } from "./permissions.service";
+import { RolesController } from "./controllers/roles.controller";
+import { RolesService } from "./services/roles.service";
+import { ModulesController } from "./controllers/modules.controller";
+import { ModulesService } from "./services/modules.service";
+import { ActionsController } from "./controllers/actions.controller";
+import { ActionsService } from "./services/actions.service";
+import { PermissionsController } from "./controllers/permissions.controller";
+import { PermissionsService } from "./services/permissions.service";
 
 @Module({
   imports: [
