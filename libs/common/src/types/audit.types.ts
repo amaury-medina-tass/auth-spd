@@ -49,6 +49,7 @@ export enum AuditEntityType {
     USER_ROLE = "UserRole",
     MODULE = "Module",
     PERMISSION = "Permission",
+    ACTION = "Action",
 }
 
 // === Labels legibles por acción ===
@@ -132,6 +133,7 @@ export interface AuditMetadata {
     // Users
     email?: string;
     document_number?: string;
+    code?: string;
 
     // Allow other fields but prefer typed ones
     [key: string]: any;

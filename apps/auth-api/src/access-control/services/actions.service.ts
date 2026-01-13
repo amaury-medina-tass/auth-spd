@@ -4,7 +4,7 @@ import { Repository, ILike } from "typeorm";
 import { ActionEntity } from "@common/entities/action.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
-import { AuditLogService, AuditAction, buildChanges } from "@common/cosmosdb";
+import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@common/cosmosdb";
 
 type ActionSystemType = "PUBLIC" | SystemType;
 
@@ -109,10 +109,10 @@ export class ActionsService {
 
         const saved = await this.repo.save(action);
 
-        await this.auditLog.logSuccess(AuditAction.ACTION_CREATED, "Action", saved.id, {
+        await this.auditLog.logSuccess(AuditAction.ACTION_CREATED, AuditEntityType.ACTION, saved.id, {
             entityName: saved.name,
             system,
-            metadata: { code_action: saved.code_action, name: saved.name }
+            metadata: { code: saved.code_action, name: saved.name, description: saved.description }
         });
 
         return saved;
@@ -134,11 +134,11 @@ export class ActionsService {
         const saved = await this.repo.save(action);
 
         const changes = buildChanges(oldValues, data, Object.keys(data));
-        await this.auditLog.logSuccess(AuditAction.ACTION_UPDATED, "Action", id, {
+        await this.auditLog.logSuccess(AuditAction.ACTION_UPDATED, AuditEntityType.ACTION, id, {
             entityName: saved.name,
             system,
             changes,
-            metadata: { code_action: saved.code_action }
+            metadata: { code: saved.code_action }
         });
 
         return saved;
@@ -159,10 +159,10 @@ export class ActionsService {
         const codeAction = action.code_action;
         await this.repo.remove(action);
 
-        await this.auditLog.logSuccess(AuditAction.ACTION_DELETED, "Action", id, {
+        await this.auditLog.logSuccess(AuditAction.ACTION_DELETED, AuditEntityType.ACTION, id, {
             entityName: actionName,
             system,
-            metadata: { code_action: codeAction, name: actionName }
+            metadata: { code: codeAction, name: actionName }
         });
 
         return { id, code_action: codeAction, deletedAt: new Date() };
