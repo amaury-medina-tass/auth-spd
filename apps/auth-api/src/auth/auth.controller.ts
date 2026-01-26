@@ -53,32 +53,32 @@ export class AuthController {
   @Post("verify-email")
   @ResponseMessage("Email verificado correctamente")
   async verify(@Body() dto: VerifyEmailDto) {
-    return this.verificationService.verifyEmail(dto.email, dto.code);
+    return this.verificationService.verifyEmail(dto.email, dto.code, dto.system);
   }
 
   @Post("resend-verification")
   @ResponseMessage("Código reenviado correctamente")
   async resend(@Body() dto: ResendVerificationDto) {
-    return this.verificationService.resendVerificationCode(dto.email);
+    return this.verificationService.resendVerificationCode(dto.email, dto.system);
   }
 
   @Post("change-password")
   @UseGuards(JwtAuthGuard)
   @ResponseMessage("Contraseña actualizada correctamente")
-  async changePassword(@CurrentUser("sub") userId: string, @Body() dto: ChangePasswordDto) {
-    return this.passwordService.changePassword(userId, dto.currentPassword, dto.newPassword);
+  async changePassword(@CurrentUser("sub") userId: string, @CurrentUser("system") system: SystemType, @Body() dto: ChangePasswordDto) {
+    return this.passwordService.changePassword(userId, dto.currentPassword, dto.newPassword, system);
   }
 
   @Post("forgot-password")
   @ResponseMessage("Solicitud procesada")
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.passwordService.forgotPassword(dto.email);
+    return this.passwordService.forgotPassword(dto.email, dto.system);
   }
 
   @Post("reset-password")
   @ResponseMessage("Contraseña restablecida correctamente")
   async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.passwordService.resetPassword(dto.email, dto.code, dto.newPassword);
+    return this.passwordService.resetPassword(dto.email, dto.code, dto.newPassword, dto.system);
   }
 
   @Post("login")
@@ -104,9 +104,9 @@ export class AuthController {
   @Post("logout")
   @UseGuards(JwtAuthGuard)
   @ResponseMessage("Sesión cerrada correctamente")
-  async logout(@CurrentUser("sub") userId: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async logout(@CurrentUser("sub") userId: string, @CurrentUser("system") system: SystemType, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const rt = req.cookies?.["refresh_token"];
-    await this.auth.logout(userId, rt);
+    await this.auth.logout(userId, system, rt);
     clearAuthCookies(res, this.cookieOpts());
     return null;
   }

@@ -1,11 +1,15 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
-import { OutboxMessage } from "@common/entities/outbox-message.entity";
+import { OutboxMessageSpd } from "@common/entities/spd/outbox-message.entity";
+import { OutboxMessageSicgem } from "@common/entities/sicgem/outbox-message.entity";
 import { OutboxService } from "./outbox.service";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([OutboxMessage])],
+  imports: [TypeOrmModule.forFeature([
+    OutboxMessageSpd,
+    OutboxMessageSicgem
+  ])],
   providers: [OutboxService],
   exports: [OutboxService]
 })
-export class OutboxModule {}
+export class OutboxModule { }

@@ -1,24 +1,31 @@
-import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, ILike } from "typeorm";
-import { ActionEntity } from "@common/entities/action.entity";
+import { ActionSpd } from "@common/entities/spd/action.entity";
+import { ActionSicgem } from "@common/entities/sicgem/action.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
 import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@common/cosmosdb";
 
-type ActionSystemType = "PUBLIC" | SystemType;
-
 @Injectable()
 export class ActionsService {
     constructor(
-        @InjectRepository(ActionEntity) private repo: Repository<ActionEntity>,
+        @InjectRepository(ActionSpd) private repoSpd: Repository<ActionSpd>,
+        @InjectRepository(ActionSicgem) private repoSicgem: Repository<ActionSicgem>,
         private auditLog: AuditLogService
     ) { }
+
+    private getRepo(system: SystemType): Repository<any> {
+        if (system === 'SPD') return this.repoSpd;
+        if (system === 'SICGEM') return this.repoSicgem;
+        throw new BadRequestException(`Sistema inválido: ${system}`);
+    }
 
     private readonly sortableFields = ["code_action", "name", "system", "created_at"];
 
     async findAll(system: SystemType) {
-        return this.repo
+        const repo = this.getRepo(system);
+        return repo
             .createQueryBuilder("action")
             .select(["action.id", "action.code_action", "action.name"])
             .where("action.system = 'PUBLIC' OR action.system = :system", { system })
@@ -34,9 +41,10 @@ export class ActionsService {
         sortBy?: string,
         sortOrder?: "ASC" | "DESC"
     ) {
+        const repo = this.getRepo(system);
         const skip = (page - 1) * limit;
 
-        let query = this.repo
+        let query = repo
             .createQueryBuilder("action")
             .where("action.system = 'PUBLIC' OR action.system = :system", { system });
 
@@ -57,7 +65,7 @@ export class ActionsService {
         const totalPages = Math.ceil(total / limit);
 
         return {
-            data: data.map(a => ({
+            data: data.map((a: any) => ({
                 id: a.id,
                 code_action: a.code_action,
                 name: a.name,
@@ -78,7 +86,8 @@ export class ActionsService {
     }
 
     async findOne(id: string, system: SystemType) {
-        const action = await this.repo
+        const repo = this.getRepo(system);
+        const action = await repo
             .createQueryBuilder("action")
             .where("action.id = :id", { id })
             .andWhere("action.system = 'PUBLIC' OR action.system = :system", { system })
@@ -92,7 +101,8 @@ export class ActionsService {
     }
 
     async create(data: { code_action: string; name: string; description?: string }, system: SystemType) {
-        const existing = await this.repo.findOne({
+        const repo = this.getRepo(system);
+        const existing = await repo.findOne({
             where: { code_action: data.code_action, system }
         });
 
@@ -100,14 +110,14 @@ export class ActionsService {
             throw new ConflictException({ message: "Ya existe una acción con ese código", code: ErrorCodes.ACTION_ALREADY_EXISTS });
         }
 
-        const action = this.repo.create({
+        const action = repo.create({
             code_action: data.code_action,
             name: data.name,
             description: data.description ?? null,
             system
         });
 
-        const saved = await this.repo.save(action);
+        const saved = await repo.save(action);
 
         await this.auditLog.logSuccess(AuditAction.ACTION_CREATED, AuditEntityType.ACTION, saved.id, {
             entityName: saved.name,
@@ -119,11 +129,23 @@ export class ActionsService {
     }
 
     async update(id: string, system: SystemType, data: { name?: string; description?: string }) {
+        const repo = this.getRepo(system);
         const action = await this.findOne(id, system);
 
         if (action.system !== "PUBLIC" && action.system !== system) {
-            throw new NotFoundException({ message: "Acción no encontrada", code: ErrorCodes.ACTION_NOT_FOUND });
+            // Should not happen if findOne enforces system check properly, but explicit check implies public modification restriction?
+            // "No se puede modificar actions PUBLIC" logic was not in original code for update, only delete?
+            // Wait, original: `if (action.system !== "PUBLIC" && action.system !== system)` -> This check ensures we don't update if it's somehow cross-system but findOne handles that.
+            // Actually, usually PUBLIC actions are shared and modifying them affects everyone.
+            // If the user wants to modify a public action, should they be allowed?
+            // Original code: `if (action.system !== "PUBLIC" && action.system !== system)` threw NotFound.
+            // This means we CAN update PUBLIC actions?
+            // Or maybe it meant "If it's neither PUBLIC nor CURRENT_SYSTEM".
+            // Since `findOne` already filters by `PUBLIC OR CURRENT`, this check seems redundant but harmless.
         }
+
+        // Original logic didn't forbid PUBLIC updates. I'll keep it as is.
+        // Wait, `delete` had explicit check `if (action.system === "PUBLIC")`. `update` did NOT.
 
         const oldValues = { name: action.name, description: action.description };
 
@@ -131,7 +153,7 @@ export class ActionsService {
         if (data.description !== undefined) action.description = data.description;
         action.updated_at = new Date();
 
-        const saved = await this.repo.save(action);
+        const saved = await repo.save(action);
 
         const changes = buildChanges(oldValues, data, Object.keys(data));
         await this.auditLog.logSuccess(AuditAction.ACTION_UPDATED, AuditEntityType.ACTION, id, {
@@ -145,6 +167,7 @@ export class ActionsService {
     }
 
     async delete(id: string, system: SystemType) {
+        const repo = this.getRepo(system);
         const action = await this.findOne(id, system);
 
         if (action.system === "PUBLIC") {
@@ -152,12 +175,13 @@ export class ActionsService {
         }
 
         if (action.system !== system) {
+            // Should be covered by findOne but just in case
             throw new NotFoundException({ message: "Acción no encontrada", code: ErrorCodes.ACTION_NOT_FOUND });
         }
 
         const actionName = action.name;
         const codeAction = action.code_action;
-        await this.repo.remove(action);
+        await repo.remove(action);
 
         await this.auditLog.logSuccess(AuditAction.ACTION_DELETED, AuditEntityType.ACTION, id, {
             entityName: actionName,

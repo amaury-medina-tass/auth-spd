@@ -1,8 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { ConfigService } from "@nestjs/config";
 import { Request } from "express";
+import { RedisService } from "@common/redis/redis.service";
 
 function cookieExtractor(req: Request): string | null {
   return req?.cookies?.["access_token"] ?? null;
@@ -10,7 +11,7 @@ function cookieExtractor(req: Request): string | null {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(cfg: ConfigService) {
+  constructor(cfg: ConfigService, private redisService: RedisService) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([cookieExtractor]),
       ignoreExpiration: false,
@@ -20,6 +21,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    return payload;
+    const userId = payload.sub;
+    const permissionsJson = await this.redisService.get(`user_permissions:${userId}`);
+
+    if (!permissionsJson) {
+      throw new UnauthorizedException("Sesión expirada o inválida (permisos no encontrados)");
+    }
+
+    const permissions = JSON.parse(permissionsJson);
+    return { ...payload, permissions };
   }
 }

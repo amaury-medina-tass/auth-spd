@@ -1,9 +1,12 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, ILike } from "typeorm";
-import { ModuleEntity } from "@common/entities/module.entity";
-import { ActionEntity } from "@common/entities/action.entity";
-import { Permission } from "@common/entities/permission.entity";
+import { ModuleSpd } from "@common/entities/spd/module.entity";
+import { ModuleSicgem } from "@common/entities/sicgem/module.entity";
+import { ActionSpd } from "@common/entities/spd/action.entity";
+import { ActionSicgem } from "@common/entities/sicgem/action.entity";
+import { PermissionSpd } from "@common/entities/spd/permission.entity";
+import { PermissionSicgem } from "@common/entities/sicgem/permission.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
 import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@common/cosmosdb";
@@ -11,16 +14,38 @@ import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@co
 @Injectable()
 export class ModulesService {
     constructor(
-        @InjectRepository(ModuleEntity) private repo: Repository<ModuleEntity>,
-        @InjectRepository(ActionEntity) private actionRepo: Repository<ActionEntity>,
-        @InjectRepository(Permission) private permissionRepo: Repository<Permission>,
+        @InjectRepository(ModuleSpd) private moduleRepoSpd: Repository<ModuleSpd>,
+        @InjectRepository(ModuleSicgem) private moduleRepoSicgem: Repository<ModuleSicgem>,
+        @InjectRepository(ActionSpd) private actionRepoSpd: Repository<ActionSpd>,
+        @InjectRepository(ActionSicgem) private actionRepoSicgem: Repository<ActionSicgem>,
+        @InjectRepository(PermissionSpd) private permissionRepoSpd: Repository<PermissionSpd>,
+        @InjectRepository(PermissionSicgem) private permissionRepoSicgem: Repository<PermissionSicgem>,
         private auditLog: AuditLogService
     ) { }
+
+    private getRepos(system: SystemType) {
+        if (system === 'SPD') {
+            return {
+                moduleRepo: this.moduleRepoSpd,
+                actionRepo: this.actionRepoSpd,
+                permissionRepo: this.permissionRepoSpd
+            };
+        }
+        if (system === 'SICGEM') {
+            return {
+                moduleRepo: this.moduleRepoSicgem,
+                actionRepo: this.actionRepoSicgem,
+                permissionRepo: this.permissionRepoSicgem
+            };
+        }
+        throw new BadRequestException(`Sistema inválido: ${system}`);
+    }
 
     private readonly sortableFields = ["name", "path", "created_at"];
 
     async findAll(system: SystemType) {
-        return this.repo
+        const { moduleRepo } = this.getRepos(system);
+        return moduleRepo
             .createQueryBuilder("module")
             .select(["module.id", "module.name", "module.path"])
             .where("module.system = 'PUBLIC' OR module.system = :system", { system })
@@ -36,19 +61,20 @@ export class ModulesService {
         sortBy?: string,
         sortOrder?: "ASC" | "DESC"
     ) {
+        const { moduleRepo } = this.getRepos(system);
         const skip = (page - 1) * limit;
 
-        const qb = this.repo.createQueryBuilder("module")
+        let qb = moduleRepo.createQueryBuilder("module")
             .where("(module.system = 'PUBLIC' OR module.system = :system)", { system });
 
         if (search) {
-            qb.andWhere("(module.name ILIKE :search OR module.path ILIKE :search)", { search: `%${search}%` });
+            qb = qb.andWhere("(module.name ILIKE :search OR module.path ILIKE :search)", { search: `%${search}%` });
         }
 
         const validSortBy = sortBy && this.sortableFields.includes(sortBy) ? sortBy : "created_at";
         const validSortOrder = sortOrder === "ASC" || sortOrder === "DESC" ? sortOrder : "DESC";
 
-        qb.orderBy(`module.${validSortBy}`, validSortOrder)
+        qb = qb.orderBy(`module.${validSortBy}`, validSortOrder)
             .skip(skip)
             .take(limit);
 
@@ -57,7 +83,7 @@ export class ModulesService {
         const totalPages = Math.ceil(total / limit);
 
         return {
-            data: data.map(m => ({
+            data: data.map((m: any) => ({
                 id: m.id,
                 name: m.name,
                 path: m.path,
@@ -77,7 +103,8 @@ export class ModulesService {
     }
 
     async findOne(id: string, system: SystemType) {
-        const module = await this.repo
+        const { moduleRepo } = this.getRepos(system);
+        const module = await moduleRepo
             .createQueryBuilder("module")
             .where("module.id = :id", { id })
             .andWhere("(module.system = 'PUBLIC' OR module.system = :system)", { system })
@@ -91,19 +118,20 @@ export class ModulesService {
     }
 
     async create(data: { name: string; path: string; description?: string }, system: SystemType) {
-        const existingByPath = await this.repo.findOne({ where: { path: data.path, system } });
+        const { moduleRepo } = this.getRepos(system);
+        const existingByPath = await moduleRepo.findOne({ where: { path: data.path, system } });
         if (existingByPath) {
             throw new ConflictException({ message: "Ya existe un módulo con ese path", code: ErrorCodes.MODULE_ALREADY_EXISTS });
         }
 
-        const module = this.repo.create({
+        const module = moduleRepo.create({
             name: data.name,
             path: data.path,
             description: data.description ?? null,
             system
         });
 
-        const saved = await this.repo.save(module);
+        const saved = await moduleRepo.save(module);
 
         await this.auditLog.logSuccess(AuditAction.MODULE_CREATED, AuditEntityType.MODULE, saved.id, {
             entityName: saved.name,
@@ -115,6 +143,7 @@ export class ModulesService {
     }
 
     async update(id: string, system: SystemType, data: { name?: string; description?: string; path?: string }) {
+        const { moduleRepo } = this.getRepos(system);
         const module = await this.findOne(id, system);
 
         if (module.system === "PUBLIC") {
@@ -125,7 +154,7 @@ export class ModulesService {
 
         if (data.path !== undefined && data.path !== module.path) {
             // Check if new path already exists
-            const existingByPath = await this.repo.findOne({ where: { path: data.path, system: module.system } });
+            const existingByPath = await moduleRepo.findOne({ where: { path: data.path, system: module.system } });
             if (existingByPath && existingByPath.id !== id) {
                 throw new ConflictException({ message: "Ya existe un módulo con ese path", code: ErrorCodes.MODULE_ALREADY_EXISTS });
             }
@@ -136,7 +165,7 @@ export class ModulesService {
         if (data.description !== undefined) module.description = data.description;
         module.updated_at = new Date();
 
-        const saved = await this.repo.save(module);
+        const saved = await moduleRepo.save(module);
 
         const changes = buildChanges(oldValues, data, Object.keys(data));
         await this.auditLog.logSuccess(AuditAction.MODULE_UPDATED, AuditEntityType.MODULE, id, {
@@ -149,6 +178,7 @@ export class ModulesService {
     }
 
     async delete(id: string, system: SystemType) {
+        const { moduleRepo } = this.getRepos(system);
         const module = await this.findOne(id, system);
 
         if (module.system === "PUBLIC") {
@@ -157,7 +187,7 @@ export class ModulesService {
 
         const moduleName = module.name;
         const modulePath = module.path;
-        await this.repo.remove(module);
+        await moduleRepo.remove(module);
 
         await this.auditLog.logSuccess(AuditAction.MODULE_DELETED, AuditEntityType.MODULE, id, {
             entityName: moduleName,
@@ -169,24 +199,25 @@ export class ModulesService {
     }
 
     async getModuleWithActions(id: string, system: SystemType) {
+        const { moduleRepo, actionRepo, permissionRepo } = this.getRepos(system);
         const module = await this.findOne(id, system);
 
         // Get all available actions for this system (PUBLIC + system-specific)
-        const allActions = await this.actionRepo
+        const allActions = await actionRepo
             .createQueryBuilder("action")
             .where("action.system = 'PUBLIC' OR action.system = :system", { system })
             .orderBy("action.code_action", "ASC")
             .getMany();
 
         // Get actions already assigned to this module (permissions)
-        const assignedPermissions = await this.permissionRepo
+        const assignedPermissions = await permissionRepo
             .createQueryBuilder("p")
             .innerJoinAndSelect("p.action", "action")
             .where("p.module_id = :moduleId", { moduleId: id })
-            .andWhere("action.system = 'PUBLIC' OR action.system = :system", { system })
+            .andWhere("(action.system = 'PUBLIC' OR action.system = :system)", { system }) // Ensure joined action respects system visible
             .getMany();
 
-        const assignedActions = assignedPermissions.map(p => ({
+        const assignedActions = assignedPermissions.map((p: any) => ({
             id: p.action.id,
             code: p.action.code_action,
             name: p.action.name,
@@ -215,10 +246,11 @@ export class ModulesService {
     }
 
     async addActionToModule(moduleId: string, actionId: string, system: SystemType) {
+        const { moduleRepo, actionRepo, permissionRepo } = this.getRepos(system);
         const module = await this.findOne(moduleId, system);
 
         // Verify the action exists and belongs to PUBLIC or the same system
-        const action = await this.actionRepo
+        const action = await actionRepo
             .createQueryBuilder("action")
             .where("action.id = :actionId", { actionId })
             .andWhere("(action.system = 'PUBLIC' OR action.system = :system)", { system })
@@ -229,7 +261,7 @@ export class ModulesService {
         }
 
         // Check if permission already exists
-        const existingPermission = await this.permissionRepo.findOne({
+        const existingPermission = await permissionRepo.findOne({
             where: { module: { id: moduleId }, action: { id: actionId } }
         });
 
@@ -237,12 +269,18 @@ export class ModulesService {
             throw new ConflictException({ message: "Esta acción ya está asignada al módulo", code: ErrorCodes.PERMISSION_ALREADY_EXISTS });
         }
 
-        const permission = this.permissionRepo.create({
-            module: { id: moduleId } as ModuleEntity,
-            action: { id: actionId } as ActionEntity
-        });
+        // Create permission
+        // Using "any" cast to bypass strict typing of relations if necessary, or constructs strict object
+        // Since we are inside specific repo context, TS knows permissionRepo is Repository<PermissionSpd> or Sicgem
+        // But create() expects DeepPartial<PermissionSpd>.
+        // { module: { id: ... }, action: { id: ... } } works if relations are defined in entity.
+        // I will use "as any" to simplify if types mismatch slightly on base entity inheritance but structured object is correct.
+        const permission: any = permissionRepo.create({
+            module: { id: moduleId },
+            action: { id: actionId }
+        } as any);
 
-        const savedPermission = await this.permissionRepo.save(permission);
+        const savedPermission = await permissionRepo.save(permission);
 
         await this.auditLog.logSuccess(AuditAction.PERMISSION_GRANTED, AuditEntityType.PERMISSION, savedPermission.id, {
             entityName: module.name,
@@ -269,9 +307,10 @@ export class ModulesService {
     }
 
     async removeActionFromModule(moduleId: string, actionId: string, system: SystemType) {
+        const { permissionRepo } = this.getRepos(system);
         const module = await this.findOne(moduleId, system);
 
-        const permission = await this.permissionRepo.findOne({
+        const permission = await permissionRepo.findOne({
             where: { module: { id: moduleId }, action: { id: actionId } },
             relations: ["action"]
         });
@@ -280,9 +319,9 @@ export class ModulesService {
             throw new NotFoundException({ message: "Permiso no encontrado", code: ErrorCodes.PERMISSION_NOT_FOUND });
         }
 
-        const actionName = permission.action?.name;
-        const actionCode = permission.action?.code_action;
-        await this.permissionRepo.remove(permission);
+        const actionName = (permission as any).action?.name;
+        const actionCode = (permission as any).action?.code_action;
+        await permissionRepo.remove(permission);
 
         await this.auditLog.logSuccess(AuditAction.PERMISSION_REVOKED, AuditEntityType.PERMISSION, `${moduleId}:${actionId}`, {
             entityName: module.name,

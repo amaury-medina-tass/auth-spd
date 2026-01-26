@@ -1,14 +1,16 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { Injectable, UnauthorizedException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { JwtService } from "@nestjs/jwt";
 import { Repository } from "typeorm";
 import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "crypto";
 
-import { User } from "@common/entities/user.entity";
-import { RefreshToken } from "@common/entities/refresh-token.entity";
+import { BaseUser } from "@common/entities/base/base-user.entity";
+import { RefreshTokenSpd } from "@common/entities/spd/refresh-token.entity";
+import { RefreshTokenSicgem } from "@common/entities/sicgem/refresh-token.entity";
 import { hashToken, verifyToken } from "@common/security/token-hash";
 import { ErrorCodes } from "@common/errors/error-codes";
+import { SystemType } from "@common/types/system";
 
 type ActionPermissions = { [actionCode: string]: { name: string; allowed: boolean } };
 interface ModulePermissions {
@@ -20,10 +22,17 @@ export type PermissionsPayload = { [modulePath: string]: ModulePermissions };
 @Injectable()
 export class TokenService {
     constructor(
-        @InjectRepository(RefreshToken) private refreshTokens: Repository<RefreshToken>,
+        @InjectRepository(RefreshTokenSpd) private repoSpd: Repository<RefreshTokenSpd>,
+        @InjectRepository(RefreshTokenSicgem) private repoSicgem: Repository<RefreshTokenSicgem>,
         private jwt: JwtService,
         private cfg: ConfigService
     ) { }
+
+    private getRepo(system: SystemType): Repository<any> {
+        if (system === 'SPD') return this.repoSpd;
+        if (system === 'SICGEM') return this.repoSicgem;
+        throw new BadRequestException(`Sistema no válido para tokens: ${system}`);
+    }
 
     private accessPrivateKey() {
         return this.cfg.get<string>("jwt.accessPrivateKey");
@@ -49,7 +58,7 @@ export class TokenService {
         return this.cfg.get<string>("jwt.refreshExpiresIn") ?? "30d";
     }
 
-    async signAccessToken(user: User, roles: string[], permissions: PermissionsPayload, system?: string) {
+    async signAccessToken(user: BaseUser, roles: string[], system?: string) {
         const fullName = `${user.first_name} ${user.last_name}`.trim();
 
         return this.jwt.signAsync(
@@ -58,14 +67,13 @@ export class TokenService {
                 email: user.email,
                 name: fullName,
                 ...(system && { system }),
-                roles,
-                permissions
+                roles
             },
             { algorithm: "RS256", privateKey: this.accessPrivateKey(), expiresIn: this.accessExpiresIn() as any }
         );
     }
 
-    async signRefreshToken(user: User, system: string) {
+    async signRefreshToken(user: BaseUser, system: string) {
         const jti = randomUUID();
         return this.jwt.signAsync(
             { sub: user.id, jti, system },
@@ -84,9 +92,11 @@ export class TokenService {
         }
     }
 
-    async storeRefreshToken(userId: string, token: string) {
+    async storeRefreshToken(userId: string, token: string, system: SystemType) {
         const expiresAt = this.computeRefreshExpiry();
-        await this.refreshTokens.insert({
+        const repo = this.getRepo(system);
+
+        await repo.insert({
             user_id: userId,
             token_hash: await hashToken(token),
             revoked: false,
@@ -100,8 +110,9 @@ export class TokenService {
         return d;
     }
 
-    async findValidRefreshTokenRow(userId: string, raw: string) {
-        const rows = await this.refreshTokens.find({
+    async findValidRefreshTokenRow(userId: string, raw: string, system: SystemType) {
+        const repo = this.getRepo(system);
+        const rows = await repo.find({
             where: { user_id: userId, revoked: false },
             order: { created_at: "DESC" },
             take: 10
@@ -116,13 +127,15 @@ export class TokenService {
         return null;
     }
 
-    async revokeRefreshToken(userId: string, raw: string) {
-        const row = await this.findValidRefreshTokenRow(userId, raw);
+    async revokeRefreshToken(userId: string, raw: string, system: SystemType) {
+        const row = await this.findValidRefreshTokenRow(userId, raw, system);
         if (!row) return;
-        await this.refreshTokens.update({ id: row.id }, { revoked: true, updated_at: new Date() });
+        const repo = this.getRepo(system);
+        await repo.update({ id: row.id }, { revoked: true, updated_at: new Date() });
     }
 
-    async revokeAllUserTokens(userId: string) {
-        await this.refreshTokens.update({ user_id: userId }, { revoked: true, updated_at: new Date() });
+    async revokeAllUserTokens(userId: string, system: SystemType) {
+        const repo = this.getRepo(system);
+        await repo.update({ user_id: userId }, { revoked: true, updated_at: new Date() });
     }
 }

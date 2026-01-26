@@ -2,19 +2,31 @@ import { BadRequestException, Injectable, InternalServerErrorException } from "@
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 
-import { User } from "@common/entities/user.entity";
+import { BaseUser } from "@common/entities/base/base-user.entity";
+import { UserSpd } from "@common/entities/spd/user.entity";
+import { UserSicgem } from "@common/entities/sicgem/user.entity";
+
 import { ErrorCodes } from "@common/errors/error-codes";
 import { EmailService } from "@common/email/email.service";
+import { SystemType } from "@common/types/system";
 
 @Injectable()
 export class VerificationService {
     constructor(
-        @InjectRepository(User) private users: Repository<User>,
+        @InjectRepository(UserSpd) private repoSpd: Repository<UserSpd>,
+        @InjectRepository(UserSicgem) private repoSicgem: Repository<UserSicgem>,
         private emailService: EmailService
     ) { }
 
-    async verifyEmail(email: string, code: string) {
-        const user = await this.users.findOne({ where: { email } });
+    private getRepo(system: SystemType): Repository<BaseUser> {
+        if (system === 'SPD') return this.repoSpd as unknown as Repository<BaseUser>;
+        if (system === 'SICGEM') return this.repoSicgem as unknown as Repository<BaseUser>;
+        throw new BadRequestException("Sistema inválido");
+    }
+
+    async verifyEmail(email: string, code: string, system: SystemType) {
+        const repo = this.getRepo(system);
+        const user = await repo.findOne({ where: { email } });
         if (!user) throw new BadRequestException({ message: "Usuario no encontrado", code: ErrorCodes.USER_NOT_FOUND });
 
         if (user.email_verified) throw new BadRequestException({ message: "Email ya verificado", code: ErrorCodes.EMAIL_ALREADY_VERIFIED });
@@ -25,20 +37,21 @@ export class VerificationService {
 
         user.email_verified = true;
         user.verification_code = null;
-        await this.users.save(user);
+        await repo.save(user);
 
         return { ok: true, message: "Email verificado correctamente" };
     }
 
-    async resendVerificationCode(email: string) {
-        const user = await this.users.findOne({ where: { email } });
+    async resendVerificationCode(email: string, system: SystemType) {
+        const repo = this.getRepo(system);
+        const user = await repo.findOne({ where: { email } });
         if (!user) throw new BadRequestException({ message: "Usuario no encontrado", code: ErrorCodes.USER_NOT_FOUND });
 
         if (user.email_verified) throw new BadRequestException({ message: "Email ya verificado", code: ErrorCodes.EMAIL_ALREADY_VERIFIED });
 
         const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
         user.verification_code = verificationCode;
-        await this.users.save(user);
+        await repo.save(user);
 
         try {
             await this.emailService.sendTemplateEmail(
@@ -61,7 +74,7 @@ export class VerificationService {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    async sendVerificationEmail(user: User, code: string) {
+    async sendVerificationEmail(user: BaseUser, code: string) {
         try {
             await this.emailService.sendTemplateEmail(
                 user.email,

@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike } from "typeorm";
-import { User } from "@common/entities/user.entity";
-import { UserRole } from "@common/entities/user-role.entity";
-import { Role } from "@common/entities/role.entity";
+import { Repository } from "typeorm";
+import { BaseUser } from "@common/entities/base/base-user.entity";
+import { UserSpd } from "@common/entities/spd/user.entity";
+import { UserSicgem } from "@common/entities/sicgem/user.entity";
+import { RoleSpd } from "@common/entities/spd/role.entity";
+import { RoleSicgem } from "@common/entities/sicgem/role.entity";
+import { UserRoleSpd } from "@common/entities/spd/user-role.entity";
+import { UserRoleSicgem } from "@common/entities/sicgem/user-role.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
 import { SystemType } from "@common/types/system";
 import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@common/cosmosdb";
@@ -11,13 +15,28 @@ import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@co
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectRepository(User) private repo: Repository<User>,
-    @InjectRepository(UserRole) private userRoleRepo: Repository<UserRole>,
-    @InjectRepository(Role) private roleRepo: Repository<Role>,
+    @InjectRepository(UserSpd) private repoSpd: Repository<UserSpd>,
+    @InjectRepository(UserSicgem) private repoSicgem: Repository<UserSicgem>,
+    @InjectRepository(UserRoleSpd) private userRoleRepoSpd: Repository<UserRoleSpd>,
+    @InjectRepository(UserRoleSicgem) private userRoleRepoSicgem: Repository<UserRoleSicgem>,
+    @InjectRepository(RoleSpd) private roleRepoSpd: Repository<RoleSpd>,
+    @InjectRepository(RoleSicgem) private roleRepoSicgem: Repository<RoleSicgem>,
     private auditLog: AuditLogService
   ) { }
 
   private readonly sortableFields = ["first_name", "last_name", "email", "document_number", "is_active", "created_at", "updated_at"];
+
+  private getRepo(system: SystemType): Repository<BaseUser> {
+    if (system === 'SPD') return this.repoSpd as unknown as Repository<BaseUser>;
+    if (system === 'SICGEM') return this.repoSicgem as unknown as Repository<BaseUser>;
+    throw new NotFoundException(`Sistema no soportado o inválido: ${system}`);
+  }
+
+  private getUserRoleRepo(system: SystemType): Repository<any> {
+    if (system === 'SPD') return this.userRoleRepoSpd;
+    if (system === 'SICGEM') return this.userRoleRepoSicgem;
+    throw new NotFoundException(`Sistema no soportado o inválido: ${system}`);
+  }
 
   async findAllPaginated(
     page: number = 1,
@@ -31,16 +50,24 @@ export class UsersService {
     const validSortBy = sortBy && this.sortableFields.includes(sortBy) ? sortBy : "created_at";
     const validSortOrder = sortOrder === "ASC" || sortOrder === "DESC" ? sortOrder : "DESC";
 
-    let query = this.repo
+    const repo = this.getRepo(system);
+
+    // Note: createQueryBuilder alias "user" allows generic usage
+    let query = repo
       .createQueryBuilder("user")
       .select([
         "user.id", "user.email", "user.first_name", "user.last_name",
         "user.document_number", "user.is_active", "user.created_at", "user.updated_at"
       ])
-      .innerJoin("user.user_roles", "ur")
-      .innerJoin("ur.role", "role", "role.system = :system", { system })
+      .innerJoin("user.user_roles", "ur") // Works because BaseUser doesn't have it but Concrete does, and we are using concrete repo
+      .innerJoin("ur.role", "role") // Schema specific role
       .leftJoinAndSelect("user.user_roles", "user_roles")
-      .leftJoinAndSelect("user_roles.role", "user_role");
+      .leftJoinAndSelect("user_roles.role", "user_role"); // Schema specific role
+
+    // Note: Relation filtering by system in 'role' IS NOT NEEDED anymore because
+    // the schema itself implies the system. RoleSpd is implicitly in Spd system.
+    // However, Role entity still has 'system' column. We can double check or ignore.
+    // The Join 'ur.role' connects to RoleSpd/Sicgem automatically.
 
     if (search) {
       query = query.andWhere(
@@ -55,11 +82,11 @@ export class UsersService {
       .take(limit)
       .getManyAndCount();
 
-    const data = users.map(user => {
+    const data = users.map((user: any) => {
       const { user_roles, ...userData } = user;
       return {
         ...userData,
-        roles: user_roles?.map(ur => ur.role ? { id: ur.role.id, name: ur.role.name } : null).filter(Boolean) || []
+        roles: user_roles?.map((ur: any) => ur.role ? { id: ur.role.id, name: ur.role.name } : null).filter(Boolean) || []
       };
     });
 
@@ -79,10 +106,11 @@ export class UsersService {
   }
 
   async findOne(id: string, system: SystemType) {
-    const user = await this.repo
+    const repo = this.getRepo(system);
+    const user: any = await repo
       .createQueryBuilder("user")
       .innerJoin("user.user_roles", "ur")
-      .innerJoin("ur.role", "role", "role.system = :system", { system })
+      .innerJoin("ur.role", "role")
       .leftJoinAndSelect("user.user_roles", "user_roles")
       .leftJoinAndSelect("user_roles.role", "user_role")
       .where("user.id = :id", { id })
@@ -95,15 +123,14 @@ export class UsersService {
     const { user_roles, ...userData } = user;
     return {
       ...userData,
-      roles: user_roles?.map(ur => ur.role ? { id: ur.role.id, name: ur.role.name } : null).filter(Boolean) || []
+      roles: user_roles?.map((ur: any) => ur.role ? { id: ur.role.id, name: ur.role.name } : null).filter(Boolean) || []
     };
   }
 
   async update(id: string, system: SystemType, data: { email?: string; document_number?: string; first_name?: string; last_name?: string; is_active?: boolean }) {
-    const user = await this.repo
+    const repo = this.getRepo(system);
+    const user: any = await repo
       .createQueryBuilder("user")
-      .innerJoin("user.user_roles", "ur")
-      .innerJoin("ur.role", "role", "role.system = :system", { system })
       .where("user.id = :id", { id })
       .getOne();
 
@@ -121,14 +148,14 @@ export class UsersService {
     };
 
     if (data.email !== undefined && data.email !== user.email) {
-      const existingByEmail = await this.repo.findOne({ where: { email: data.email } });
+      const existingByEmail = await repo.findOne({ where: { email: data.email } } as any);
       if (existingByEmail && existingByEmail.id !== id) {
         throw new ConflictException({ message: `El email ${data.email} ya está en uso`, code: ErrorCodes.EMAIL_IN_USE });
       }
     }
 
     if (data.document_number !== undefined && data.document_number !== user.document_number) {
-      const existingByDocument = await this.repo.findOne({ where: { document_number: data.document_number } });
+      const existingByDocument = await repo.findOne({ where: { document_number: data.document_number } } as any);
       if (existingByDocument && existingByDocument.id !== id) {
         throw new ConflictException({ message: `El número de documento ${data.document_number} ya está en uso`, code: ErrorCodes.DOCUMENT_IN_USE });
       }
@@ -142,7 +169,7 @@ export class UsersService {
 
     user.updated_at = new Date();
 
-    await this.repo.save(user);
+    await repo.save(user);
 
     // Log detallado con cambios
     const changes = buildChanges(oldValues, data, Object.keys(data));
@@ -161,10 +188,11 @@ export class UsersService {
   }
 
   async delete(id: string, system: SystemType) {
-    const user = await this.repo
+    const repo = this.getRepo(system);
+    const userRoleRepo = this.getUserRoleRepo(system);
+
+    const user: any = await repo
       .createQueryBuilder("user")
-      .innerJoin("user.user_roles", "ur")
-      .innerJoin("ur.role", "role", "role.system = :system", { system })
       .where("user.id = :id", { id })
       .getOne();
 
@@ -175,8 +203,8 @@ export class UsersService {
     const entityName = `${user.first_name} ${user.last_name}`;
     const userEmail = user.email;
 
-    await this.userRoleRepo.delete({ user_id: id });
-    await this.repo.remove(user);
+    await userRoleRepo.delete({ user_id: id });
+    await repo.remove(user);
 
     await this.auditLog.logSuccess(AuditAction.USER_DELETED, AuditEntityType.USER, id, {
       entityName,
