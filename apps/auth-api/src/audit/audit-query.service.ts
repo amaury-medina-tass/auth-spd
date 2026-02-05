@@ -1,6 +1,6 @@
 import { Injectable, Inject, Logger, Optional } from "@nestjs/common";
 import { Database, Container, SqlQuerySpec } from "@azure/cosmos";
-import { COSMOS_DATABASE, COSMOS_CONTAINER_NAME } from "@common/cosmosdb";
+import { COSMOS_DATABASE, COSMOS_CONTAINER_NAME, COSMOS_CORE_CONTAINER_NAME } from "@common/cosmosdb";
 import { AuditLogEntry, AuditAction } from "@common/types/audit.types";
 
 export interface AuditLogQueryOptions {
@@ -28,23 +28,36 @@ export interface PaginatedAuditLogs {
     };
 }
 
+/**
+ * Mapeo de system → nombre del container en CosmosDB.
+ * Cada microservicio escribe en su propio container;
+ * este servicio resuelve cuál consultar según el sistema solicitado.
+ */
+const SYSTEM_CONTAINER_MAP: Record<string, "auth" | "core"> = {
+    AUTH: "auth",
+    SPD: "core",
+};
+
 @Injectable()
 export class AuditQueryService {
     private readonly logger = new Logger(AuditQueryService.name);
-    private container: Container | null = null;
-    private containerName: string;
+    private readonly containers = new Map<string, Container>();
+    private authContainerName: string;
+    private coreContainerName: string;
     private initPromise: Promise<void>;
     private initialized = false;
 
     constructor(
         @Optional() @Inject(COSMOS_DATABASE) private database: Database | null,
-        @Optional() @Inject(COSMOS_CONTAINER_NAME) containerName: string | null
+        @Optional() @Inject(COSMOS_CONTAINER_NAME) authContainerName: string | null,
+        @Optional() @Inject(COSMOS_CORE_CONTAINER_NAME) coreContainerName: string | null,
     ) {
-        this.containerName = containerName || "audit_logs";
-        this.initPromise = this.initializeContainer();
+        this.authContainerName = authContainerName || "auth_logs";
+        this.coreContainerName = coreContainerName || "core_logs";
+        this.initPromise = this.initializeContainers();
     }
 
-    private async initializeContainer(): Promise<void> {
+    private async initializeContainers(): Promise<void> {
         if (!this.database) {
             this.logger.warn("CosmosDB not configured, audit queries disabled");
             this.initialized = true;
@@ -52,17 +65,29 @@ export class AuditQueryService {
         }
 
         try {
-            const { container } = await this.database.containers.createIfNotExists({
-                id: this.containerName,
-                partitionKey: { paths: ["/entityType"] }
-            });
-            this.container = container;
+            for (const [key, name] of [["auth", this.authContainerName], ["core", this.coreContainerName]] as const) {
+                const { container } = await this.database.containers.createIfNotExists({
+                    id: name,
+                    partitionKey: { paths: ["/entityType"] },
+                });
+                this.containers.set(key, container);
+                this.logger.log(`Audit query container initialized: ${name} (${key})`);
+            }
             this.initialized = true;
-            this.logger.log(`Audit query container initialized: ${this.containerName}`);
         } catch (error) {
             this.initialized = true;
-            this.logger.error(`Failed to initialize audit container: ${error}`);
+            this.logger.error(`Failed to initialize audit containers: ${error}`);
         }
+    }
+
+    /**
+     * Resuelve el container correcto según el sistema solicitado.
+     * Si no se especifica sistema, devuelve el container de auth (default).
+     */
+    private getContainer(system?: string): Container | null {
+        if (!system) return this.containers.get("auth") || null;
+        const key = SYSTEM_CONTAINER_MAP[system] || "auth";
+        return this.containers.get(key) || null;
     }
 
     async findAll(options: AuditLogQueryOptions = {}): Promise<PaginatedAuditLogs> {
@@ -70,7 +95,8 @@ export class AuditQueryService {
             await this.initPromise;
         }
 
-        if (!this.container) {
+        const container = this.getContainer(options.system);
+        if (!container) {
             return this.emptyResult(options.page || 1, options.limit || 20);
         }
 
@@ -90,11 +116,6 @@ export class AuditQueryService {
         if (options.action) {
             conditions.push("c.action = @action");
             parameters.push({ name: "@action", value: options.action });
-        }
-
-        if (options.system) {
-            conditions.push("c.system = @system");
-            parameters.push({ name: "@system", value: options.system });
         }
 
         if (options.startDate) {
@@ -122,7 +143,7 @@ export class AuditQueryService {
                 query: `SELECT VALUE COUNT(1) FROM c WHERE ${whereClause}`,
                 parameters
             };
-            const { resources: countResult } = await this.container.items.query(countQuery).fetchAll();
+            const { resources: countResult } = await container.items.query(countQuery).fetchAll();
             const total = countResult[0] || 0;
 
             // Get paginated data
@@ -134,7 +155,7 @@ export class AuditQueryService {
                     { name: "@limit", value: limit }
                 ]
             };
-            const { resources: data } = await this.container.items.query<AuditLogEntry>(dataQuery).fetchAll();
+            const { resources: data } = await container.items.query<AuditLogEntry>(dataQuery).fetchAll();
 
             const totalPages = Math.ceil(total / limit);
 
@@ -160,21 +181,22 @@ export class AuditQueryService {
             await this.initPromise;
         }
 
-        if (!this.container) {
-            return null;
+        const query: SqlQuerySpec = {
+            query: "SELECT * FROM c WHERE c.id = @id",
+            parameters: [{ name: "@id", value: id }]
+        };
+
+        // Buscar en todos los containers ya que no sabemos de cuál viene
+        for (const container of this.containers.values()) {
+            try {
+                const { resources } = await container.items.query<AuditLogEntry>(query).fetchAll();
+                if (resources[0]) return resources[0];
+            } catch (error) {
+                this.logger.error(`Failed to get audit log by id from container: ${error}`);
+            }
         }
 
-        try {
-            const query: SqlQuerySpec = {
-                query: "SELECT * FROM c WHERE c.id = @id",
-                parameters: [{ name: "@id", value: id }]
-            };
-            const { resources } = await this.container.items.query<AuditLogEntry>(query).fetchAll();
-            return resources[0] || null;
-        } catch (error) {
-            this.logger.error(`Failed to get audit log by id: ${error}`);
-            return null;
-        }
+        return null;
     }
 
     async getStats(system?: string): Promise<{ byAction: Record<string, number>; byEntityType: Record<string, number>; total: number }> {
@@ -182,27 +204,25 @@ export class AuditQueryService {
             await this.initPromise;
         }
 
-        if (!this.container) {
+        const container = this.getContainer(system);
+        if (!container) {
             return { byAction: {}, byEntityType: {}, total: 0 };
         }
 
         try {
-            const whereClause = system ? "WHERE c.system = @system" : "";
-            const parameters = system ? [{ name: "@system", value: system }] : [];
-
             // Count by action
             const actionQuery: SqlQuerySpec = {
-                query: `SELECT c.action, COUNT(1) as count FROM c ${whereClause} GROUP BY c.action`,
-                parameters
+                query: `SELECT c.action, COUNT(1) as count FROM c GROUP BY c.action`,
+                parameters: []
             };
-            const { resources: actionStats } = await this.container.items.query<{ action: string; count: number }>(actionQuery).fetchAll();
+            const { resources: actionStats } = await container.items.query<{ action: string; count: number }>(actionQuery).fetchAll();
 
             // Count by entity type
             const entityQuery: SqlQuerySpec = {
-                query: `SELECT c.entityType, COUNT(1) as count FROM c ${whereClause} GROUP BY c.entityType`,
-                parameters
+                query: `SELECT c.entityType, COUNT(1) as count FROM c GROUP BY c.entityType`,
+                parameters: []
             };
-            const { resources: entityStats } = await this.container.items.query<{ entityType: string; count: number }>(entityQuery).fetchAll();
+            const { resources: entityStats } = await container.items.query<{ entityType: string; count: number }>(entityQuery).fetchAll();
 
             const byAction: Record<string, number> = {};
             for (const stat of actionStats) {

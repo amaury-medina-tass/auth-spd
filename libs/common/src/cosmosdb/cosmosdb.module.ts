@@ -4,6 +4,8 @@ import { CosmosClient, Database } from "@azure/cosmos";
 import * as https from "https";
 import { AuditLogService, COSMOS_DATABASE, COSMOS_CONTAINER_NAME } from "./audit-log.service";
 
+export const COSMOS_CORE_CONTAINER_NAME = "COSMOS_CORE_CONTAINER_NAME";
+
 @Global()
 @Module({})
 export class CosmosDbModule {
@@ -39,10 +41,14 @@ export class CosmosDbModule {
                         });
 
                         // Crear base de datos si no existe
-                        const { database } = await client.databases.createIfNotExists({ id: databaseName });
-                        console.log(`[CosmosDB] Connected to database: ${databaseName}`);
-
-                        return database;
+                        try {
+                            const { database } = await client.databases.createIfNotExists({ id: databaseName });
+                            console.log(`[CosmosDB] Connected to database: ${databaseName}`);
+                            return database;
+                        } catch (error) {
+                            console.warn(`[CosmosDB] Could not connect (${(error as Error).message}). Audit logging disabled.`);
+                            return null as any;
+                        }
                     },
                     inject: [ConfigService]
                 },
@@ -53,9 +59,16 @@ export class CosmosDbModule {
                     },
                     inject: [ConfigService]
                 },
+                {
+                    provide: COSMOS_CORE_CONTAINER_NAME,
+                    useFactory: (configService: ConfigService): string => {
+                        return configService.get<string>("cosmosDb.coreContainerName") || "core_logs";
+                    },
+                    inject: [ConfigService]
+                },
                 AuditLogService
             ],
-            exports: [COSMOS_DATABASE, COSMOS_CONTAINER_NAME, AuditLogService]
+            exports: [COSMOS_DATABASE, COSMOS_CONTAINER_NAME, COSMOS_CORE_CONTAINER_NAME, AuditLogService]
         };
     }
 }
