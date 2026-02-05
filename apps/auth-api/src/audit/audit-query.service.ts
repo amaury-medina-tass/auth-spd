@@ -53,7 +53,7 @@ export class AuditQueryService {
         @Optional() @Inject(COSMOS_CORE_CONTAINER_NAME) coreContainerName: string | null,
     ) {
         this.authContainerName = authContainerName || "auth_logs";
-        this.coreContainerName = coreContainerName || "core_logs";
+        this.coreContainerName = coreContainerName || "spd_core_logs";
         this.initPromise = this.initializeContainers();
     }
 

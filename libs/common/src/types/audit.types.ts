@@ -169,8 +169,10 @@ export enum AuditAction {
 
     // Avances de Variable
     VARIABLE_ADVANCE_CREATED = "VARIABLE_ADVANCE_CREATED",
+    VARIABLE_ADVANCE_UPDATED = "VARIABLE_ADVANCE_UPDATED",
 
     // Avances de Indicador
+    INDICATOR_ADVANCE_CREATED = "INDICATOR_ADVANCE_CREATED",
     INDICATOR_ADVANCE_UPDATED = "INDICATOR_ADVANCE_UPDATED",
 
     // ========================
@@ -345,6 +347,8 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
 
     // Sub — Avances
     [AuditAction.VARIABLE_ADVANCE_CREATED]: "Avance de Variable Creado",
+    [AuditAction.VARIABLE_ADVANCE_UPDATED]: "Avance de Variable Actualizado",
+    [AuditAction.INDICATOR_ADVANCE_CREATED]: "Avance de Indicador Creado",
     [AuditAction.INDICATOR_ADVANCE_UPDATED]: "Avance de Indicador Actualizado",
 
     // SAP Sync

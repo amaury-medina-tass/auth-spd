@@ -62,7 +62,7 @@ export class CosmosDbModule {
                 {
                     provide: COSMOS_CORE_CONTAINER_NAME,
                     useFactory: (configService: ConfigService): string => {
-                        return configService.get<string>("cosmosDb.coreContainerName") || "core_logs";
+                        return configService.get<string>("cosmosDb.coreContainerName") || "spd_core_logs";
                     },
                     inject: [ConfigService]
                 },
