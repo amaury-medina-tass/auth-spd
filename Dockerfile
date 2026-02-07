@@ -29,9 +29,6 @@ RUN bun install --production
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
 
-# Copy email templates to same path as local development
-COPY libs/common/src/email/templates ./libs/common/src/email/templates
-
 # Expose the port
 EXPOSE 3001
 

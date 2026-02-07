@@ -206,7 +206,7 @@ export class AuthService {
 
     await this.outbox.enqueue("Auth.UserCreated", { userId: saved.id, email: saved.email }, requestId, system);
 
-    await this.verificationService.sendVerificationEmail(saved, verificationCode);
+    await this.verificationService.sendVerificationEmail(saved, verificationCode, system);
 
     return { user: saved, isNewUser: true };
   }

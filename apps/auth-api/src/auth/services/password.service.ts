@@ -5,7 +5,6 @@ import { UserSpd } from "@common/entities/spd/user.entity";
 import { UserSicgem } from "@common/entities/sicgem/user.entity";
 import { hashPassword, verifyPassword } from "@common/security/password";
 import { ErrorCodes } from "@common/errors/error-codes";
-import { EmailService } from "@common/email/email.service";
 import { SystemType } from "@common/types/system";
 import { BaseUser } from "@common/entities/base/base-user.entity";
 
@@ -13,8 +12,7 @@ import { BaseUser } from "@common/entities/base/base-user.entity";
 export class PasswordService {
     constructor(
         @InjectRepository(UserSpd) private repoSpd: Repository<UserSpd>,
-        @InjectRepository(UserSicgem) private repoSicgem: Repository<UserSicgem>,
-        private emailService: EmailService
+        @InjectRepository(UserSicgem) private repoSicgem: Repository<UserSicgem>
     ) { }
 
     private getRepo(system: SystemType): Repository<BaseUser> {
@@ -50,17 +48,7 @@ export class PasswordService {
         user.verification_code = code;
         await repo.save(user);
 
-        try {
-            await this.emailService.sendTemplateEmail(
-                user.email,
-                "Restablecer Contraseña - TASS SPD",
-                "reset-password.html",
-                {
-                    name: user.first_name,
-                    code
-                }
-            );
-        } catch (e) { }
+        // Email sending is now handled by notification-service via domain events
 
         return { ok: true, message: "Si el correo existe, se enviará un código" };
     }

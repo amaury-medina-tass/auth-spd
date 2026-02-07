@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 
@@ -7,15 +7,13 @@ import { UserSpd } from "@common/entities/spd/user.entity";
 import { UserSicgem } from "@common/entities/sicgem/user.entity";
 
 import { ErrorCodes } from "@common/errors/error-codes";
-import { EmailService } from "@common/email/email.service";
 import { SystemType } from "@common/types/system";
 
 @Injectable()
 export class VerificationService {
     constructor(
         @InjectRepository(UserSpd) private repoSpd: Repository<UserSpd>,
-        @InjectRepository(UserSicgem) private repoSicgem: Repository<UserSicgem>,
-        private emailService: EmailService
+        @InjectRepository(UserSicgem) private repoSicgem: Repository<UserSicgem>
     ) { }
 
     private getRepo(system: SystemType): Repository<BaseUser> {
@@ -42,7 +40,7 @@ export class VerificationService {
         return { ok: true, message: "Email verificado correctamente" };
     }
 
-    async resendVerificationCode(email: string, system: SystemType) {
+    async resendVerificationCode(email: string, system: SystemType = 'SPD') {
         const repo = this.getRepo(system);
         const user = await repo.findOne({ where: { email } });
         if (!user) throw new BadRequestException({ message: "Usuario no encontrado", code: ErrorCodes.USER_NOT_FOUND });
@@ -53,19 +51,7 @@ export class VerificationService {
         user.verification_code = verificationCode;
         await repo.save(user);
 
-        try {
-            await this.emailService.sendTemplateEmail(
-                user.email,
-                "Nuevo código de verificación - TASS SPD",
-                "verification.html",
-                {
-                    name: user.first_name,
-                    code: verificationCode
-                }
-            );
-        } catch (e) {
-            throw new InternalServerErrorException("Error al enviar el correo de verificación");
-        }
+        // Email sending is now handled by notification-service via domain events
 
         return { ok: true, message: "Código reenviado correctamente" };
     }
@@ -74,17 +60,8 @@ export class VerificationService {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    async sendVerificationEmail(user: BaseUser, code: string) {
-        try {
-            await this.emailService.sendTemplateEmail(
-                user.email,
-                "Verifica tu cuenta - TASS SPD",
-                "verification.html",
-                {
-                    name: user.first_name,
-                    code
-                }
-            );
-        } catch (e) { }
+    async sendVerificationEmail(user: BaseUser, code: string, system: SystemType = 'SPD') {
+        // Email sending is now handled by notification-service via domain events
+        // This method is kept for compatibility but does nothing
     }
 }

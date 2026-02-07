@@ -117,4 +117,12 @@ export class AuthController {
   async me(@CurrentUser("sub") userId: string, @CurrentUser("system") system: SystemType) {
     return this.auth.me(userId, system);
   }
+
+  @Get("ws-token")
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage("Token de WebSocket obtenido")
+  async wsToken(@Req() req: Request) {
+    const token = req.cookies?.["access_token"];
+    return { token };
+  }
 }

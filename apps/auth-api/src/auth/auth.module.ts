@@ -32,7 +32,6 @@ import { VerificationService } from "./services/verification.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { PermissionsResolverService } from "./services/permissions-resolver.service";
 import { OutboxModule } from "../outbox/outbox.module";
-import { EmailModule } from "@common/email/email.module";
 import { RedisModule } from "@common/redis/redis.module";
 
 @Module({
@@ -40,7 +39,6 @@ import { RedisModule } from "@common/redis/redis.module";
     RedisModule,
     PassportModule,
     OutboxModule,
-    EmailModule,
     TypeOrmModule.forFeature([
       // SPD
       UserSpd,
