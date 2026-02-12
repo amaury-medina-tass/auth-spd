@@ -13,11 +13,6 @@ async function bootstrap() {
 
   app.use(cookieParser());
 
-  app.enableCors({
-    origin: true,
-    credentials: true
-  });
-
   const httpAdapter = app.get(HttpAdapterHost);
   const reflector = app.get(Reflector);
   app.useGlobalFilters(new AllExceptionsFilter(httpAdapter));
