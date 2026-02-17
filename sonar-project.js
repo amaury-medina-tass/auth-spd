@@ -5,7 +5,7 @@ scanner({
   options: {
     'sonar.projectKey': 'auth-service-key',
     'sonar.projectName': 'Auth Service',
-    'sonar.token': 'sqp_a4f9f0f33f11edb1c43c1a224dca91f5030c6025',
+    'sonar.token': 'sqp_5b5459896f292c725dbbfa5065b7464af8a040f6',
     // Apuntamos a las carpetas raíz del monorepo (Apps y Libs)
     'sonar.sources': 'apps,libs',
     'sonar.tests': 'apps,libs',
