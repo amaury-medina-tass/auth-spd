@@ -2,9 +2,9 @@ import { ServiceBusClient } from "@azure/service-bus";
 import { OutboxEventEnvelope } from "@common/types/events";
 
 export class ServiceBusPublisher {
-  private client: ServiceBusClient;
+  private readonly client: ServiceBusClient;
 
-  constructor(private connectionString: string, private topicName: string) {
+  constructor(private readonly connectionString: string, private readonly topicName: string) {
     this.client = new ServiceBusClient(connectionString);
   }
 

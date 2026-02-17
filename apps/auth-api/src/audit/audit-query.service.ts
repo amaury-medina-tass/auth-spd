@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, Optional } from "@nestjs/common";
+import { Injectable, Inject, Logger, Optional, OnModuleInit } from "@nestjs/common";
 import { Database, Container, SqlQuerySpec } from "@azure/cosmos";
 import { COSMOS_DATABASE, COSMOS_CONTAINER_NAME, COSMOS_CORE_CONTAINER_NAME } from "@common/cosmosdb";
 import { AuditLogEntry, AuditAction } from "@common/types/audit.types";
@@ -39,21 +39,24 @@ const SYSTEM_CONTAINER_MAP: Record<string, "auth" | "core"> = {
 };
 
 @Injectable()
-export class AuditQueryService {
+export class AuditQueryService implements OnModuleInit {
     private readonly logger = new Logger(AuditQueryService.name);
     private readonly containers = new Map<string, Container>();
-    private authContainerName: string;
-    private coreContainerName: string;
+    private readonly authContainerName: string;
+    private readonly coreContainerName: string;
     private initPromise: Promise<void>;
     private initialized = false;
 
     constructor(
-        @Optional() @Inject(COSMOS_DATABASE) private database: Database | null,
+        @Optional() @Inject(COSMOS_DATABASE) private readonly database: Database | null,
         @Optional() @Inject(COSMOS_CONTAINER_NAME) authContainerName: string | null,
         @Optional() @Inject(COSMOS_CORE_CONTAINER_NAME) coreContainerName: string | null,
     ) {
         this.authContainerName = authContainerName || "auth_logs";
         this.coreContainerName = coreContainerName || "spd_core_logs";
+    }
+
+    async onModuleInit() {
         this.initPromise = this.initializeContainers();
     }
 

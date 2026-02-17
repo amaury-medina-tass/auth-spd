@@ -1,6 +1,6 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { ApiResponse } from "../interfaces/api-response.interface";
 
 @Catch()
@@ -50,10 +50,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: httpStatus,
       message,
       data: null,
-      errors: errors || (errorCode ? { code: errorCode, ...errorData } : null),
+      errors: errors ?? (errorCode ? { code: errorCode, ...errorData } : null),
       meta: {
         timestamp: new Date().toISOString(),
-        requestId: request.headers["x-request-id"] || randomUUID(),
+        requestId: request.headers["x-request-id"] ?? randomUUID(),
         path: httpAdapter.getRequestUrl(request),
         method: httpAdapter.getRequestMethod(request)
       }

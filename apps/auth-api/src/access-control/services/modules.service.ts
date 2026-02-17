@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike } from "typeorm";
+import { Repository } from "typeorm";
 import { ModuleSpd } from "@common/entities/spd/module.entity";
 import { ModuleSicgem } from "@common/entities/sicgem/module.entity";
 import { ActionSpd } from "@common/entities/spd/action.entity";
@@ -14,13 +14,13 @@ import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@co
 @Injectable()
 export class ModulesService {
     constructor(
-        @InjectRepository(ModuleSpd) private moduleRepoSpd: Repository<ModuleSpd>,
-        @InjectRepository(ModuleSicgem) private moduleRepoSicgem: Repository<ModuleSicgem>,
-        @InjectRepository(ActionSpd) private actionRepoSpd: Repository<ActionSpd>,
-        @InjectRepository(ActionSicgem) private actionRepoSicgem: Repository<ActionSicgem>,
-        @InjectRepository(PermissionSpd) private permissionRepoSpd: Repository<PermissionSpd>,
-        @InjectRepository(PermissionSicgem) private permissionRepoSicgem: Repository<PermissionSicgem>,
-        private auditLog: AuditLogService
+        @InjectRepository(ModuleSpd) private readonly moduleRepoSpd: Repository<ModuleSpd>,
+        @InjectRepository(ModuleSicgem) private readonly moduleRepoSicgem: Repository<ModuleSicgem>,
+        @InjectRepository(ActionSpd) private readonly actionRepoSpd: Repository<ActionSpd>,
+        @InjectRepository(ActionSicgem) private readonly actionRepoSicgem: Repository<ActionSicgem>,
+        @InjectRepository(PermissionSpd) private readonly permissionRepoSpd: Repository<PermissionSpd>,
+        @InjectRepository(PermissionSicgem) private readonly permissionRepoSicgem: Repository<PermissionSicgem>,
+        private readonly auditLog: AuditLogService
     ) { }
 
     private getRepos(system: SystemType) {
@@ -54,8 +54,8 @@ export class ModulesService {
     }
 
     async findAllPaginated(
-        page: number = 1,
-        limit: number = 10,
+        page: number,
+        limit: number,
         system: SystemType,
         search?: string,
         sortBy?: string,
@@ -199,7 +199,7 @@ export class ModulesService {
     }
 
     async getModuleWithActions(id: string, system: SystemType) {
-        const { moduleRepo, actionRepo, permissionRepo } = this.getRepos(system);
+        const { actionRepo, permissionRepo } = this.getRepos(system);
         const module = await this.findOne(id, system);
 
         // Get all available actions for this system (PUBLIC + system-specific)
@@ -246,7 +246,7 @@ export class ModulesService {
     }
 
     async addActionToModule(moduleId: string, actionId: string, system: SystemType) {
-        const { moduleRepo, actionRepo, permissionRepo } = this.getRepos(system);
+        const { actionRepo, permissionRepo } = this.getRepos(system);
         const module = await this.findOne(moduleId, system);
 
         // Verify the action exists and belongs to PUBLIC or the same system

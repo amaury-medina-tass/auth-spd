@@ -11,7 +11,7 @@ import { CreatePermissionDto } from "../dto/create-permission.dto";
 @Controller("access-control/permissions")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class PermissionsController {
-    constructor(private svc: PermissionsService) { }
+    constructor(private readonly svc: PermissionsService) { }
 
     @Get()
     @RequirePermission("/access-control/permissions", "READ")

@@ -1,8 +1,9 @@
 import { normalizePem } from "@common/security/pem";
 
-export default () => ({
+export default function configuration() {
+  return {
   nodeEnv: process.env.NODE_ENV ?? "development",
-  port: parseInt(process.env.PORT ?? "3001", 10),
+  port: Number.parseInt(process.env.PORT ?? "3001", 10),
 
   databaseUrl: process.env.DATABASE_URL!,
 
@@ -37,4 +38,5 @@ export default () => ({
     coreContainerName: process.env.COSMOS_DB_CORE_CONTAINER || "spd_core_logs",
     disableSslVerification: process.env.COSMOS_DB_DISABLE_SSL || "true"
   }
-});
+};
+}

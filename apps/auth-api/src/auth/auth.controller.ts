@@ -20,10 +20,10 @@ import { ResponseMessage } from "../common/decorators/response-message.decorator
 @Controller("auth")
 export class AuthController {
   constructor(
-    private auth: AuthService,
-    private passwordService: PasswordService,
-    private verificationService: VerificationService,
-    private cfg: ConfigService
+    private readonly auth: AuthService,
+    private readonly passwordService: PasswordService,
+    private readonly verificationService: VerificationService,
+    private readonly cfg: ConfigService
   ) { }
 
   private cookieOpts() {

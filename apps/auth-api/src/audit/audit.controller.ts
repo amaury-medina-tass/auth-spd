@@ -6,7 +6,7 @@ import { RequirePermission } from "../common/decorators/require-permission.decor
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { ResponseMessage } from "../common/decorators/response-message.decorator";
 import { AuditQueryService, AuditLogQueryOptions } from "./audit-query.service";
-import { AuditAction } from "@common/types/audit.types";
+import { FindAllAuditQueryDto } from "./dto/find-all-audit-query.dto";
 
 @Controller("audit")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -36,30 +36,21 @@ export class AuditController {
     @ResponseMessage("Lista de logs de auditoría obtenida")
     async findAll(
         @CurrentUser("system") userSystem: SystemType,
-        @Query("system") querySystem?: string,
-        @Query("page") page?: string,
-        @Query("limit") limit?: string,
-        @Query("entityType") entityType?: string,
-        @Query("action") action?: AuditAction,
-        @Query("startDate") startDate?: string,
-        @Query("endDate") endDate?: string,
-        @Query("search") search?: string,
-        @Query("sortBy") sortBy?: "timestamp" | "action" | "entityType",
-        @Query("sortOrder") sortOrder?: "ASC" | "DESC"
+        @Query() query: FindAllAuditQueryDto
     ) {
-        const system = this.resolveSystem(querySystem, userSystem);
+        const system = this.resolveSystem(query.system, userSystem);
 
         const options: AuditLogQueryOptions = {
-            page: page ? parseInt(page, 10) : 1,
-            limit: limit ? Math.min(parseInt(limit, 10), 100) : 20,
-            entityType,
-            action,
+            page: query.page ? Number.parseInt(query.page, 10) : 1,
+            limit: query.limit ? Math.min(Number.parseInt(query.limit, 10), 100) : 20,
+            entityType: query.entityType,
+            action: query.action,
             system,
-            startDate: startDate ? new Date(startDate) : undefined,
-            endDate: endDate ? new Date(endDate) : undefined,
-            search,
-            sortBy,
-            sortOrder
+            startDate: query.startDate ? new Date(query.startDate) : undefined,
+            endDate: query.endDate ? new Date(query.endDate) : undefined,
+            search: query.search,
+            sortBy: query.sortBy,
+            sortOrder: query.sortOrder
         };
 
         return this.auditQuery.findAll(options);

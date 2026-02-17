@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, UnauthorizedException, NotFoundException, ConflictException } from "@nestjs/common";
+import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { DataSource, Repository } from "typeorm";
 
@@ -8,11 +8,9 @@ import { BaseRole } from "@common/entities/base/base-role.entity";
 import { UserSpd } from "@common/entities/spd/user.entity";
 import { RoleSpd } from "@common/entities/spd/role.entity";
 import { UserRoleSpd } from "@common/entities/spd/user-role.entity";
-import { RefreshTokenSpd } from "@common/entities/spd/refresh-token.entity";
 import { UserSicgem } from "@common/entities/sicgem/user.entity";
 import { RoleSicgem } from "@common/entities/sicgem/role.entity";
 import { UserRoleSicgem } from "@common/entities/sicgem/user-role.entity";
-import { RefreshTokenSicgem } from "@common/entities/sicgem/refresh-token.entity";
 
 import { hashPassword, verifyPassword } from "@common/security/password";
 import { ErrorCodes } from "@common/errors/error-codes";
@@ -33,24 +31,20 @@ interface UserPermissionRow {
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectRepository(UserSpd) private userRepoSpd: Repository<UserSpd>,
-    @InjectRepository(UserSicgem) private userRepoSicgem: Repository<UserSicgem>,
+    @InjectRepository(UserSpd) private readonly userRepoSpd: Repository<UserSpd>,
+    @InjectRepository(UserSicgem) private readonly userRepoSicgem: Repository<UserSicgem>,
 
-    @InjectRepository(RoleSpd) private roleRepoSpd: Repository<RoleSpd>,
-    @InjectRepository(RoleSicgem) private roleRepoSicgem: Repository<RoleSicgem>,
+    @InjectRepository(RoleSpd) private readonly roleRepoSpd: Repository<RoleSpd>,
+    @InjectRepository(RoleSicgem) private readonly roleRepoSicgem: Repository<RoleSicgem>,
 
-    @InjectRepository(UserRoleSpd) private userRoleRepoSpd: Repository<UserRoleSpd>,
-    @InjectRepository(UserRoleSicgem) private userRoleRepoSicgem: Repository<UserRoleSicgem>,
+    @InjectRepository(UserRoleSpd) private readonly userRoleRepoSpd: Repository<UserRoleSpd>,
+    @InjectRepository(UserRoleSicgem) private readonly userRoleRepoSicgem: Repository<UserRoleSicgem>,
 
-    // Note: RefreshToken repos injected in TokenService, but if needed here we can inject.
-    // However, AuthService mainly uses TokenService for token ops.
-    // Except maybe cleaning up? AuthService uses TokenService.revoke...
-
-    private dataSource: DataSource,
-    private outbox: OutboxService,
-    private tokenService: TokenService,
-    private verificationService: VerificationService,
-    private redisService: RedisService
+    private readonly dataSource: DataSource,
+    private readonly outbox: OutboxService,
+    private readonly tokenService: TokenService,
+    private readonly verificationService: VerificationService,
+    private readonly redisService: RedisService
   ) { }
 
   private getRepo(system: SystemType): Repository<BaseUser> {
@@ -305,19 +299,10 @@ export class AuthService {
     const repo = this.getRepo(system);
     const user = await repo.findOne({ where: { id: userId } } as any);
 
-    if (!user || !user.is_active) throw new UnauthorizedException({ message: "Usuario inactivo", code: ErrorCodes.USER_INACTIVE });
+    if (!user?.is_active) throw new UnauthorizedException({ message: "Usuario inactivo", code: ErrorCodes.USER_INACTIVE });
 
     const validRow = await this.tokenService.findValidRefreshTokenRow(userId, refreshToken, system);
     if (!validRow) throw new UnauthorizedException({ message: "Token de refresco revocado o inválido", code: ErrorCodes.REFRESH_TOKEN_REVOKED });
-
-    const repoToken = (system === 'SPD') ? (this.tokenService as any).repoSpd : (this.tokenService as any).repoSicgem; // This accessing private props is bad. 
-    // Wait, TokenService handles update/revoke.
-    // But here we need to mark it as revoked.
-    // The original code did: this.refreshTokens.update({ id: validRow.id }, { revoked: true, updated_at: new Date() });
-    // I should add a method in TokenService `revokeTokenById(id, system)`.
-    // Or just `revokeRefreshToken(userId, token, system)` which I already have.
-    // `revokeRefreshToken` finds the row and updates it.
-    // If I already found the row, I can call `revokeRefreshToken` with raw token.
 
     await this.tokenService.revokeRefreshToken(userId, refreshToken, system);
 

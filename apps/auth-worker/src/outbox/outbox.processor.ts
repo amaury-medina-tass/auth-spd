@@ -4,7 +4,6 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, Repository } from "typeorm";
 import { OutboxMessageSpd } from "@common/entities/spd/outbox-message.entity";
 import { OutboxMessageSicgem } from "@common/entities/sicgem/outbox-message.entity";
-import { BaseOutboxMessage } from "@common/entities/base/base-outbox-message.entity";
 import { OutboxPublisher } from "./outbox.publisher";
 
 @Injectable()
@@ -12,9 +11,9 @@ export class OutboxProcessor {
   private readonly logger = new Logger(OutboxProcessor.name);
 
   constructor(
-    @InjectRepository(OutboxMessageSpd) private outboxSpd: Repository<OutboxMessageSpd>,
-    @InjectRepository(OutboxMessageSicgem) private outboxSicgem: Repository<OutboxMessageSicgem>,
-    private publisher: OutboxPublisher
+    @InjectRepository(OutboxMessageSpd) private readonly outboxSpd: Repository<OutboxMessageSpd>,
+    @InjectRepository(OutboxMessageSicgem) private readonly outboxSicgem: Repository<OutboxMessageSicgem>,
+    private readonly publisher: OutboxPublisher
   ) { }
 
   @Cron("*/2 * * * * *")
@@ -32,7 +31,7 @@ export class OutboxProcessor {
 
     for (const msg of batch) {
       try {
-        const envelope = msg.payload as any;
+        const envelope = msg.payload;
         await this.publisher.publish(envelope);
 
         msg.processed_at = new Date();

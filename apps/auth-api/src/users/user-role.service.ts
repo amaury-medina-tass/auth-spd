@@ -15,13 +15,13 @@ import { AuditLogService, AuditAction, AuditEntityType } from "@common/cosmosdb"
 @Injectable()
 export class UserRoleService {
     constructor(
-        @InjectRepository(UserSpd) private userRepoSpd: Repository<UserSpd>,
-        @InjectRepository(UserSicgem) private userRepoSicgem: Repository<UserSicgem>,
-        @InjectRepository(UserRoleSpd) private userRoleRepoSpd: Repository<UserRoleSpd>,
-        @InjectRepository(UserRoleSicgem) private userRoleRepoSicgem: Repository<UserRoleSicgem>,
-        @InjectRepository(RoleSpd) private roleRepoSpd: Repository<RoleSpd>,
-        @InjectRepository(RoleSicgem) private roleRepoSicgem: Repository<RoleSicgem>,
-        private auditLog: AuditLogService
+        @InjectRepository(UserSpd) private readonly userRepoSpd: Repository<UserSpd>,
+        @InjectRepository(UserSicgem) private readonly userRepoSicgem: Repository<UserSicgem>,
+        @InjectRepository(UserRoleSpd) private readonly userRoleRepoSpd: Repository<UserRoleSpd>,
+        @InjectRepository(UserRoleSicgem) private readonly userRoleRepoSicgem: Repository<UserRoleSicgem>,
+        @InjectRepository(RoleSpd) private readonly roleRepoSpd: Repository<RoleSpd>,
+        @InjectRepository(RoleSicgem) private readonly roleRepoSicgem: Repository<RoleSicgem>,
+        private readonly auditLog: AuditLogService
     ) { }
 
     private getUserRepo(system: SystemType): Repository<any> { // return any to allow query builder 'user_roles' access
@@ -89,30 +89,6 @@ export class UserRoleService {
         const userRepo = this.getUserRepo(system);
         const roleRepo = this.getRoleRepo(system);
         const userRoleRepo = this.getUserRoleRepo(system);
-
-        const userInSystem = await userRepo
-            .createQueryBuilder("user")
-            .innerJoin("user.user_roles", "ur")
-            .innerJoin("ur.role", "role") // Schema check implicitly via relation
-            .where("user.id = :userId", { userId })
-            .getOne();
-
-        // Note: The logic "userInSystem" originally checked if query returned something.
-        // It joined user_roles. So it asserted user has AT LEAST ONE role.
-        // But what if user exists but has NO roles? (e.g. wiped manually).
-        // The original code enforced innerJoin.
-        // If I want to allow assigning role to a user that exists but has no roles?
-        // QueryBuilder with innerJoin will fail to find user if no roles.
-        // But `AuthService.register` adds a default role. So typically they have one.
-        // If I want to be safe, I should just check if User exists.
-        // But original logic "Usuario no encontrado EN ESTE SISTEMA" implies checking the join.
-        // I will keep innerJoin logic for consistency, or maybe relax it?
-        // Since schema splits users, `userRepo.findOne(id)` asserts existence in schema.
-        // I'll stick to `findOne` to verify existence, unrelated to roles.
-        // Original code was: `.innerJoin("ur.role", "role", "role.system = :system"...)`.
-        // That filtered users who have a role in that system.
-        // BUT now users are dedicated to text system.
-        // So checking `userRepo.findOne` is enough.
 
         const user = await userRepo.findOne({ where: { id: userId } });
         if (!user) {

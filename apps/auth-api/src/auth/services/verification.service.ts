@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
+import { randomInt } from "node:crypto";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 
@@ -12,8 +13,8 @@ import { SystemType } from "@common/types/system";
 @Injectable()
 export class VerificationService {
     constructor(
-        @InjectRepository(UserSpd) private repoSpd: Repository<UserSpd>,
-        @InjectRepository(UserSicgem) private repoSicgem: Repository<UserSicgem>
+        @InjectRepository(UserSpd) private readonly repoSpd: Repository<UserSpd>,
+        @InjectRepository(UserSicgem) private readonly repoSicgem: Repository<UserSicgem>
     ) { }
 
     private getRepo(system: SystemType): Repository<BaseUser> {
@@ -47,7 +48,7 @@ export class VerificationService {
 
         if (user.email_verified) throw new BadRequestException({ message: "Email ya verificado", code: ErrorCodes.EMAIL_ALREADY_VERIFIED });
 
-        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const verificationCode = randomInt(100000, 1000000).toString();
         user.verification_code = verificationCode;
         await repo.save(user);
 
@@ -57,7 +58,7 @@ export class VerificationService {
     }
 
     generateVerificationCode(): string {
-        return Math.floor(100000 + Math.random() * 900000).toString();
+        return randomInt(100000, 1000000).toString();
     }
 
     async sendVerificationEmail(user: BaseUser, code: string, system: SystemType = 'SPD') {

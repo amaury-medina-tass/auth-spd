@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike } from "typeorm";
+import { Repository } from "typeorm";
 import { ActionSpd } from "@common/entities/spd/action.entity";
 import { ActionSicgem } from "@common/entities/sicgem/action.entity";
 import { ErrorCodes } from "@common/errors/error-codes";
@@ -10,9 +10,9 @@ import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@co
 @Injectable()
 export class ActionsService {
     constructor(
-        @InjectRepository(ActionSpd) private repoSpd: Repository<ActionSpd>,
-        @InjectRepository(ActionSicgem) private repoSicgem: Repository<ActionSicgem>,
-        private auditLog: AuditLogService
+        @InjectRepository(ActionSpd) private readonly repoSpd: Repository<ActionSpd>,
+        @InjectRepository(ActionSicgem) private readonly repoSicgem: Repository<ActionSicgem>,
+        private readonly auditLog: AuditLogService
     ) { }
 
     private getRepo(system: SystemType): Repository<any> {
@@ -34,8 +34,8 @@ export class ActionsService {
     }
 
     async findAllPaginated(
-        page: number = 1,
-        limit: number = 10,
+        page: number,
+        limit: number,
         system: SystemType,
         search?: string,
         sortBy?: string,

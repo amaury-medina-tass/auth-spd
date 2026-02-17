@@ -9,8 +9,8 @@ import { UserRoleSicgem } from "@common/entities/sicgem/user-role.entity";
 @Injectable()
 export class PermissionsResolverService {
     constructor(
-        @InjectRepository(UserRoleSpd) private urRepoSpd: Repository<UserRoleSpd>,
-        @InjectRepository(UserRoleSicgem) private urRepoSicgem: Repository<UserRoleSicgem>
+        @InjectRepository(UserRoleSpd) private readonly urRepoSpd: Repository<UserRoleSpd>,
+        @InjectRepository(UserRoleSicgem) private readonly urRepoSicgem: Repository<UserRoleSicgem>
     ) { }
 
     private getRepo(system: SystemType): Repository<any> {

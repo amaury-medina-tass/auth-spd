@@ -15,13 +15,13 @@ import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@co
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectRepository(UserSpd) private repoSpd: Repository<UserSpd>,
-    @InjectRepository(UserSicgem) private repoSicgem: Repository<UserSicgem>,
-    @InjectRepository(UserRoleSpd) private userRoleRepoSpd: Repository<UserRoleSpd>,
-    @InjectRepository(UserRoleSicgem) private userRoleRepoSicgem: Repository<UserRoleSicgem>,
-    @InjectRepository(RoleSpd) private roleRepoSpd: Repository<RoleSpd>,
-    @InjectRepository(RoleSicgem) private roleRepoSicgem: Repository<RoleSicgem>,
-    private auditLog: AuditLogService
+    @InjectRepository(UserSpd) private readonly repoSpd: Repository<UserSpd>,
+    @InjectRepository(UserSicgem) private readonly repoSicgem: Repository<UserSicgem>,
+    @InjectRepository(UserRoleSpd) private readonly userRoleRepoSpd: Repository<UserRoleSpd>,
+    @InjectRepository(UserRoleSicgem) private readonly userRoleRepoSicgem: Repository<UserRoleSicgem>,
+    @InjectRepository(RoleSpd) private readonly roleRepoSpd: Repository<RoleSpd>,
+    @InjectRepository(RoleSicgem) private readonly roleRepoSicgem: Repository<RoleSicgem>,
+    private readonly auditLog: AuditLogService
   ) { }
 
   private readonly sortableFields = ["first_name", "last_name", "email", "document_number", "is_active", "created_at", "updated_at"];
@@ -39,8 +39,8 @@ export class UsersService {
   }
 
   async findAllPaginated(
-    page: number = 1,
-    limit: number = 10,
+    page: number,
+    limit: number,
     system: SystemType,
     search?: string,
     sortBy?: string,
@@ -127,6 +127,20 @@ export class UsersService {
     };
   }
 
+  private async validateUniqueEmail(repo: Repository<BaseUser>, email: string, excludeId: string) {
+    const existing = await repo.findOne({ where: { email } } as any);
+    if (existing && existing.id !== excludeId) {
+      throw new ConflictException({ message: `El email ${email} ya está en uso`, code: ErrorCodes.EMAIL_IN_USE });
+    }
+  }
+
+  private async validateUniqueDocument(repo: Repository<BaseUser>, documentNumber: string, excludeId: string) {
+    const existing = await repo.findOne({ where: { document_number: documentNumber } } as any);
+    if (existing && existing.id !== excludeId) {
+      throw new ConflictException({ message: `El número de documento ${documentNumber} ya está en uso`, code: ErrorCodes.DOCUMENT_IN_USE });
+    }
+  }
+
   async update(id: string, system: SystemType, data: { email?: string; document_number?: string; first_name?: string; last_name?: string; is_active?: boolean }) {
     const repo = this.getRepo(system);
     const user: any = await repo
@@ -148,17 +162,11 @@ export class UsersService {
     };
 
     if (data.email !== undefined && data.email !== user.email) {
-      const existingByEmail = await repo.findOne({ where: { email: data.email } } as any);
-      if (existingByEmail && existingByEmail.id !== id) {
-        throw new ConflictException({ message: `El email ${data.email} ya está en uso`, code: ErrorCodes.EMAIL_IN_USE });
-      }
+      await this.validateUniqueEmail(repo, data.email, id);
     }
 
     if (data.document_number !== undefined && data.document_number !== user.document_number) {
-      const existingByDocument = await repo.findOne({ where: { document_number: data.document_number } } as any);
-      if (existingByDocument && existingByDocument.id !== id) {
-        throw new ConflictException({ message: `El número de documento ${data.document_number} ya está en uso`, code: ErrorCodes.DOCUMENT_IN_USE });
-      }
+      await this.validateUniqueDocument(repo, data.document_number, id);
     }
 
     if (data.email !== undefined) user.email = data.email;

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { randomInt } from "node:crypto";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { UserSpd } from "@common/entities/spd/user.entity";
@@ -11,8 +12,8 @@ import { BaseUser } from "@common/entities/base/base-user.entity";
 @Injectable()
 export class PasswordService {
     constructor(
-        @InjectRepository(UserSpd) private repoSpd: Repository<UserSpd>,
-        @InjectRepository(UserSicgem) private repoSicgem: Repository<UserSicgem>
+        @InjectRepository(UserSpd) private readonly repoSpd: Repository<UserSpd>,
+        @InjectRepository(UserSicgem) private readonly repoSicgem: Repository<UserSicgem>
     ) { }
 
     private getRepo(system: SystemType): Repository<BaseUser> {
@@ -44,7 +45,7 @@ export class PasswordService {
 
         if (!user.email_verified) throw new BadRequestException({ message: "El correo no está verificado", code: ErrorCodes.EMAIL_NOT_VERIFIED_FOR_RESET });
 
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const code = randomInt(100000, 1000000).toString();
         user.verification_code = code;
         await repo.save(user);
 

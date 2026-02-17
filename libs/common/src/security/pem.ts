@@ -1,3 +1,3 @@
 export function normalizePem(input: string): string {
-  return input.replace(/\\n/g, "\n").trim();
+  return input.replaceAll(String.raw`\n`, "\n").trim();
 }

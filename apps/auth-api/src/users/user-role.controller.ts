@@ -11,7 +11,7 @@ import { AssignRoleBodyDto } from "./dto/assign-role-body.dto";
 @Controller("users")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class UserRoleController {
-    constructor(private svc: UserRoleService) { }
+    constructor(private readonly svc: UserRoleService) { }
 
     @Get(":id/roles")
     @RequirePermission("/access-control/users", "READ")

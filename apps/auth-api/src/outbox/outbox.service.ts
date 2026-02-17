@@ -2,7 +2,7 @@ import { Injectable, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { OutboxEventEnvelope, OutboxEventName } from "@common/types/events";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { SystemType } from "@common/types/system";
 
 import { OutboxMessageSpd } from "@common/entities/spd/outbox-message.entity";
@@ -11,8 +11,8 @@ import { OutboxMessageSicgem } from "@common/entities/sicgem/outbox-message.enti
 @Injectable()
 export class OutboxService {
   constructor(
-    @InjectRepository(OutboxMessageSpd) private repoSpd: Repository<OutboxMessageSpd>,
-    @InjectRepository(OutboxMessageSicgem) private repoSicgem: Repository<OutboxMessageSicgem>
+    @InjectRepository(OutboxMessageSpd) private readonly repoSpd: Repository<OutboxMessageSpd>,
+    @InjectRepository(OutboxMessageSicgem) private readonly repoSicgem: Repository<OutboxMessageSicgem>
   ) { }
 
   private getRepo(system?: SystemType): Repository<any> {

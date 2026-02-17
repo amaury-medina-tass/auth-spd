@@ -14,13 +14,13 @@ import { AuditLogService, AuditAction, AuditEntityType } from "@common/cosmosdb"
 @Injectable()
 export class PermissionsService {
     constructor(
-        @InjectRepository(PermissionSpd) private permissionRepoSpd: Repository<PermissionSpd>,
-        @InjectRepository(PermissionSicgem) private permissionRepoSicgem: Repository<PermissionSicgem>,
-        @InjectRepository(ModuleSpd) private moduleRepoSpd: Repository<ModuleSpd>,
-        @InjectRepository(ModuleSicgem) private moduleRepoSicgem: Repository<ModuleSicgem>,
-        @InjectRepository(ActionSpd) private actionRepoSpd: Repository<ActionSpd>,
-        @InjectRepository(ActionSicgem) private actionRepoSicgem: Repository<ActionSicgem>,
-        private auditLog: AuditLogService
+        @InjectRepository(PermissionSpd) private readonly permissionRepoSpd: Repository<PermissionSpd>,
+        @InjectRepository(PermissionSicgem) private readonly permissionRepoSicgem: Repository<PermissionSicgem>,
+        @InjectRepository(ModuleSpd) private readonly moduleRepoSpd: Repository<ModuleSpd>,
+        @InjectRepository(ModuleSicgem) private readonly moduleRepoSicgem: Repository<ModuleSicgem>,
+        @InjectRepository(ActionSpd) private readonly actionRepoSpd: Repository<ActionSpd>,
+        @InjectRepository(ActionSicgem) private readonly actionRepoSicgem: Repository<ActionSicgem>,
+        private readonly auditLog: AuditLogService
     ) { }
 
     private getRepos(system: SystemType) {
@@ -42,8 +42,8 @@ export class PermissionsService {
     }
 
     async findAllPaginated(
-        page: number = 1,
-        limit: number = 10,
+        page: number,
+        limit: number,
         system: SystemType
     ) {
         const { permissionRepo } = this.getRepos(system);

@@ -3,7 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { JwtService } from "@nestjs/jwt";
 import { Repository } from "typeorm";
 import { ConfigService } from "@nestjs/config";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 import { BaseUser } from "@common/entities/base/base-user.entity";
 import { RefreshTokenSpd } from "@common/entities/spd/refresh-token.entity";
@@ -22,10 +22,10 @@ export type PermissionsPayload = { [modulePath: string]: ModulePermissions };
 @Injectable()
 export class TokenService {
     constructor(
-        @InjectRepository(RefreshTokenSpd) private repoSpd: Repository<RefreshTokenSpd>,
-        @InjectRepository(RefreshTokenSicgem) private repoSicgem: Repository<RefreshTokenSicgem>,
-        private jwt: JwtService,
-        private cfg: ConfigService
+        @InjectRepository(RefreshTokenSpd) private readonly repoSpd: Repository<RefreshTokenSpd>,
+        @InjectRepository(RefreshTokenSicgem) private readonly repoSicgem: Repository<RefreshTokenSicgem>,
+        private readonly jwt: JwtService,
+        private readonly cfg: ConfigService
     ) { }
 
     private getRepo(system: SystemType): Repository<any> {

@@ -251,8 +251,8 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
     [AuditAction.LOGIN_SUCCESS]: "Inicio de Sesión",
     [AuditAction.LOGIN_FAILED]: "Inicio de Sesión Fallido",
     [AuditAction.LOGOUT]: "Cierre de Sesión",
-    [AuditAction.PASSWORD_CHANGED]: "Contraseña Cambiada",
-    [AuditAction.PASSWORD_RESET_REQUESTED]: "Recuperación de Contraseña",
+    [AuditAction.PASSWORD_CHANGED]: "Contraseña Cambiada", // NOSONAR — UI label, not a credential
+    [AuditAction.PASSWORD_RESET_REQUESTED]: "Recuperación de Contraseña", // NOSONAR
     [AuditAction.MODULE_CREATED]: "Módulo Creado",
     [AuditAction.MODULE_UPDATED]: "Módulo Actualizado",
     [AuditAction.MODULE_DELETED]: "Módulo Eliminado",
@@ -365,7 +365,7 @@ export const FIELD_LABELS: Record<string, string> = {
     last_name: "Apellido",
     document_number: "Número de Documento",
     is_active: "Estado Activo",
-    password: "Contraseña",
+    password: "Contraseña", // NOSONAR — field display label, not a credential
     role: "Rol",
     permission: "Permiso",
     name: "Nombre",

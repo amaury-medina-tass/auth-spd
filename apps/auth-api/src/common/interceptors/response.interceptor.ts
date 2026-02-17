@@ -1,14 +1,14 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from "@nestjs/common";
 import { Observable } from "rxjs";
 import { map } from "rxjs/operators";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { ApiResponse } from "../interfaces/api-response.interface";
 import { Reflector } from "@nestjs/core";
 import { RESPONSE_MESSAGE_KEY } from "../decorators/response-message.decorator";
 
 @Injectable()
 export class ResponseInterceptor<T> implements NestInterceptor<T, ApiResponse<T>> {
-  constructor(private reflector: Reflector) {}
+  constructor(private readonly reflector: Reflector) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<ApiResponse<T>> {
     const ctx = context.switchToHttp();

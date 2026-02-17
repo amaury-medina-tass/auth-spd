@@ -8,8 +8,8 @@ import { ErrorCodes } from "@common/errors/error-codes";
 @Injectable()
 export class PermissionsGuard implements CanActivate {
     constructor(
-        private reflector: Reflector,
-        private permissionsResolver: PermissionsResolverService
+        private readonly reflector: Reflector,
+        private readonly permissionsResolver: PermissionsResolverService
     ) { }
 
     async canActivate(context: ExecutionContext): Promise<boolean> {

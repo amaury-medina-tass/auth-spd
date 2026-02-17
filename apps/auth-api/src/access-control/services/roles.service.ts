@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike, In } from "typeorm";
+import { Repository } from "typeorm";
 import { RoleSpd } from "@common/entities/spd/role.entity";
 import { RoleSicgem } from "@common/entities/sicgem/role.entity";
 import { RolePermissionSpd } from "@common/entities/spd/role-permission.entity";
@@ -14,13 +14,13 @@ import { AuditLogService, AuditAction, buildChanges, AuditEntityType } from "@co
 @Injectable()
 export class RolesService {
     constructor(
-        @InjectRepository(RoleSpd) private roleRepoSpd: Repository<RoleSpd>,
-        @InjectRepository(RoleSicgem) private roleRepoSicgem: Repository<RoleSicgem>,
-        @InjectRepository(RolePermissionSpd) private rpermRepoSpd: Repository<RolePermissionSpd>,
-        @InjectRepository(RolePermissionSicgem) private rpermRepoSicgem: Repository<RolePermissionSicgem>,
-        @InjectRepository(PermissionSpd) private permRepoSpd: Repository<PermissionSpd>,
-        @InjectRepository(PermissionSicgem) private permRepoSicgem: Repository<PermissionSicgem>,
-        private auditLog: AuditLogService
+        @InjectRepository(RoleSpd) private readonly roleRepoSpd: Repository<RoleSpd>,
+        @InjectRepository(RoleSicgem) private readonly roleRepoSicgem: Repository<RoleSicgem>,
+        @InjectRepository(RolePermissionSpd) private readonly rpermRepoSpd: Repository<RolePermissionSpd>,
+        @InjectRepository(RolePermissionSicgem) private readonly rpermRepoSicgem: Repository<RolePermissionSicgem>,
+        @InjectRepository(PermissionSpd) private readonly permRepoSpd: Repository<PermissionSpd>,
+        @InjectRepository(PermissionSicgem) private readonly permRepoSicgem: Repository<PermissionSicgem>,
+        private readonly auditLog: AuditLogService
     ) { }
 
     private getRepos(system: SystemType) {
@@ -53,8 +53,8 @@ export class RolesService {
     }
 
     async findAllPaginated(
-        page: number = 1,
-        limit: number = 10,
+        page: number,
+        limit: number,
         system: SystemType,
         search?: string,
         sortBy?: string,
@@ -111,7 +111,7 @@ export class RolesService {
     }
 
     async getRolePermissions(id: string, system: SystemType) {
-        const { roleRepo, permissionRepo, rolePermissionRepo } = this.getRepos(system);
+        const { permissionRepo, rolePermissionRepo } = this.getRepos(system);
         const role = await this.findOne(id, system);
 
         // Get ALL permissions available in this system (SPD schema)
@@ -292,7 +292,7 @@ export class RolesService {
         system: SystemType,
         allowedPermissionIds: string[]
     ) {
-        const { roleRepo, permissionRepo, rolePermissionRepo } = this.getRepos(system);
+        const { permissionRepo, rolePermissionRepo } = this.getRepos(system);
         const role = await this.findOne(roleId, system);
 
         // If no permissions sent, just clear all permissions for this role

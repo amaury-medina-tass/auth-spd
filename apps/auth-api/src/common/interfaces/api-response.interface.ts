@@ -3,7 +3,7 @@ export interface ApiResponse<T> {
   statusCode: number;
   message: string;
   data: T | null;
-  errors: any | null;
+  errors: any;
   meta: {
     timestamp: string;
     requestId: string;

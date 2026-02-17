@@ -12,7 +12,7 @@ import { UpdateActionDto } from "../dto/update-action.dto";
 @Controller("access-control/actions")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ActionsController {
-    constructor(private svc: ActionsService) { }
+    constructor(private readonly svc: ActionsService) { }
 
     @Get()
     @RequirePermission("/access-control/actions", "READ")

@@ -11,7 +11,7 @@ import { UpdateUserDto } from "./dto/update-user.dto";
 @Controller("users")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class UsersController {
-  constructor(private svc: UsersService) { }
+  constructor(private readonly svc: UsersService) { }
 
   @Get()
   @RequirePermission("/access-control/users", "READ")

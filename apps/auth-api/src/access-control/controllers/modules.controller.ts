@@ -12,7 +12,7 @@ import { UpdateModuleDto } from "../dto/update-module.dto";
 @Controller("access-control/modules")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ModulesController {
-    constructor(private svc: ModulesService) { }
+    constructor(private readonly svc: ModulesService) { }
 
     @Get()
     @RequirePermission("/access-control/modules", "READ")

@@ -1,5 +1,6 @@
-import { Injectable, Inject, Logger, Optional } from "@nestjs/common";
+import { Injectable, Inject, Logger, Optional, OnModuleInit } from "@nestjs/common";
 import { Database, Container } from "@azure/cosmos";
+import { randomUUID } from "node:crypto";
 import {
     AuditLogEntry,
     AuditAction,
@@ -14,8 +15,8 @@ export const COSMOS_DATABASE = "COSMOS_DATABASE";
 export const COSMOS_CONTAINER_NAME = "COSMOS_CONTAINER_NAME";
 
 // Re-export types for convenience
-export type { AuditLogEntry, AuditActor, AuditChange, AuditError };
-export { AuditAction, getActionLabel, AuditEntityType };
+export type { AuditLogEntry, AuditActor, AuditChange, AuditError } from "@common/types/audit.types";
+export { AuditAction, getActionLabel, AuditEntityType } from "@common/types/audit.types";
 
 export interface LogOptions {
     entityName?: string;
@@ -29,18 +30,21 @@ export interface LogOptions {
 }
 
 @Injectable()
-export class AuditLogService {
+export class AuditLogService implements OnModuleInit {
     private readonly logger = new Logger(AuditLogService.name);
     private container: Container | null = null;
-    private containerName: string;
+    private readonly containerName: string;
     private initPromise: Promise<void>;
     private initialized = false;
 
     constructor(
-        @Optional() @Inject(COSMOS_DATABASE) private database: Database | null,
+        @Optional() @Inject(COSMOS_DATABASE) private readonly database: Database | null,
         @Optional() @Inject(COSMOS_CONTAINER_NAME) containerName: string | null
     ) {
         this.containerName = containerName || "audit_logs";
+    }
+
+    async onModuleInit() {
         this.initPromise = this.initializeContainer();
     }
 
@@ -81,7 +85,7 @@ export class AuditLogService {
         }
 
         const logEntry: AuditLogEntry = {
-            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            id: randomUUID(),
             timestamp: new Date(),
             action,
             actionLabel: getActionLabel(action),

@@ -12,7 +12,7 @@ import { UpdateRoleDto } from "../dto/update-role.dto";
 @Controller("access-control/roles")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class RolesController {
-    constructor(private svc: RolesService) { }
+    constructor(private readonly svc: RolesService) { }
 
     @Get()
     @RequirePermission("/access-control/roles", "READ")
